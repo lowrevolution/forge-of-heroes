@@ -4928,7 +4928,7 @@ function roll4d6dl(){
 }
 
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-goto],[data-act],[data-pick-race],[data-pick-class],[data-pick-bg],[data-pick-align]");
+  const t=e.target.closest("[data-goto],[data-act],[data-pick-race],[data-pick-class],[data-pick-bg],[data-pick-align],[data-pick-sub]");
   if(!t) return;
   if(t.dataset.goto!==undefined){ S.step=+t.dataset.goto; render(); window.scrollTo({top:0,behavior:"smooth"}); return; }
   if(t.dataset.pickRace!==undefined){

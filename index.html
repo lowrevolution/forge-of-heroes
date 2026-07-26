@@ -308,6 +308,33 @@
   #dice-log .log-entry{padding:2px 0;border-bottom:1px dotted rgba(74,58,28,.5)}
   #dice-log .log-entry b{color:var(--ink)}
 
+  /* ============ DRAG & DROP DICE ============ */
+  .roll-pool{padding-bottom:16px}
+  .rolled-die{cursor:grab;user-select:none;position:relative}
+  .rolled-die:active{cursor:grabbing}
+  .rolled-die.assigned{opacity:.5;border-style:dashed}
+  .rolled-die.dragging{opacity:.25}
+  .rolled-die .assigned-to{position:absolute;bottom:-16px;left:0;right:0;font-size:.62rem;color:var(--ok);text-align:center;font-variant:small-caps;letter-spacing:.04em}
+  .ability-box.drop-ok{border-color:var(--gold-bright);box-shadow:0 0 16px rgba(255,215,94,.4);transform:scale(1.03)}
+
+  /* ============ CHARACTER ART ============ */
+  .art-drop{border:2px dashed var(--border-gold);border-radius:8px;padding:20px;text-align:center;color:var(--ink-dim);cursor:pointer;transition:all .2s;margin-top:8px}
+  .art-drop:hover{border-color:var(--gold);color:var(--ink);background:rgba(201,162,39,.04)}
+  .art-drop img{max-width:100%;max-height:300px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  .sheet-art{border:1.5px solid #8a6d1f;border-radius:6px;background:rgba(255,252,240,.6);display:flex;align-items:center;justify-content:center;min-height:430px;grid-column:1/-1;padding:10px}
+  .sheet-art img{max-width:100%;max-height:470px;border-radius:4px}
+
+  /* ============ ATTACKS & SHEET EXTRAS ============ */
+  .combat-stat .cs-sub{font-size:.66rem;color:#6b5a35;margin-top:2px;white-space:nowrap}
+  .atk-line{display:flex;justify-content:space-between;gap:8px;font-size:.88rem;padding:4px 0;border-bottom:1px dotted #c9b98a}
+  .atk-line small{color:#6b5a35}
+  .sheet details.drill{background:transparent;border-color:#8a6d1f}
+  .sheet details.drill>summary{color:#5b4310}
+  .sheet details.drill>summary::before{color:#8e1c1c}
+  .sheet .trait{border-left-color:#c9b98a}
+  .sheet .trait b{color:#8e1c1c}
+  .sheet .trait .t-desc{color:#4a3c22}
+
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-track{background:var(--bg-deep)}
   ::-webkit-scrollbar-thumb{background:var(--border-dim);border-radius:5px}
@@ -393,9 +420,6 @@ const SKILLS = {
   "Performance":"cha","Persuasion":"cha","Religion":"int","Sleight of Hand":"dex",
   "Stealth":"dex","Survival":"wis"
 };
-const STANDARD_ARRAY = [15,14,13,12,10,8];
-const POINT_BUY_BUDGET = 27;
-const POINT_BUY_COST = {8:0,9:1,10:2,11:3,12:4,13:5,14:7,15:9};
 const ALIGNMENTS = [
   ["Lawful Good","Honor and compassion — the crusader."],
   ["Neutral Good","Does the best good possible — the benefactor."],
@@ -929,14 +953,179 @@ SPELLS["Illusory Script"]={lvl:1,school:"Illusion",d:"Write on parchment; to all
 
 <script>
 /* =====================================================================
+   GAME DATA — PHYSIQUE, WEAPONS & SPELL DETAILS
+===================================================================== */
+/* Height in inches, weight in pounds — ranges follow the PHB random
+   height/weight tables for each race. */
+const PHYSIQUE = {
+  "Dwarf (Hill)":{height:[44,53],weight:[115,180],hair:["Black","Dark brown","Auburn","Fiery red","Iron gray","White"],eyes:["Brown","Hazel","Green","Deep blue","Steel gray"],skin:["Pale","Ruddy","Tan","Light brown","Deep brown"]},
+  "Elf (High)":{height:[56,74],weight:[95,170],hair:["Silver-white","Golden blond","Raven black","Chestnut brown","Copper red"],eyes:["Emerald green","Gold","Silver","Sapphire blue","Violet"],skin:["Alabaster","Fair","Bronze","Copper","Deep brown"]},
+  "Halfling (Lightfoot)":{height:[33,40],weight:[30,45],hair:["Sandy brown","Brown","Black","Auburn","Honey blond"],eyes:["Brown","Hazel","Green","Blue"],skin:["Fair","Tan","Ruddy","Brown"]},
+  "Human":{height:[56,78],weight:[110,270],hair:["Black","Dark brown","Brown","Auburn","Red","Blond","Gray","White"],eyes:["Brown","Hazel","Green","Blue","Gray","Amber"],skin:["Pale","Fair","Olive","Tan","Light brown","Brown","Deep brown","Ebony"]},
+  "Dragonborn":{height:[66,82],weight:[175,350],hair:["None — smooth scaled crest","None — swept-back horns","Feather-like frills"],eyes:["Crimson","Gold","Amber","Emerald","Sapphire","Pale silver"],skin:["Black scales","Blue scales","Brass scales","Bronze scales","Copper scales","Gold scales","Green scales","Red scales","Silver scales","White scales"]},
+  "Gnome (Rock)":{height:[37,43],weight:[35,45],hair:["White","Silver-gray","Sandy blond","Chestnut","Wild orange","Moss green (dyed)"],eyes:["Glittering black","Bright blue","Green","Brown","Amber"],skin:["Tan","Ruddy","Light brown","Rosy"]},
+  "Half-Elf":{height:[57,74],weight:[110,238],hair:["Black","Dark brown","Brown","Auburn","Blond","Silver-blond"],eyes:["Green","Hazel","Blue","Gray","Gold-flecked brown","Violet"],skin:["Pale","Fair","Olive","Tan","Brown","Deep brown"]},
+  "Half-Orc":{height:[58,80],weight:[140,280],hair:["Black","Dark brown","Iron gray","None (shaved)"],eyes:["Red","Amber","Brown","Black","Yellow"],skin:["Gray","Gray-green","Olive","Ashen","Brown"]},
+  "Tiefling":{height:[57,73],weight:[110,230],hair:["Black","Dark blue","Deep purple","Wine red","Brown","White"],eyes:["Solid black","Solid red","Solid gold","Solid silver","Solid white","Burning orange"],skin:["Human tones","Brick red","Crimson","Maroon","Violet","Midnight blue","Ashen gray"]}
+};
+function rangeOpts(min,max,step){const o=[];for(let v=min;v<=max;v+=step)o.push(v);return o;}
+function inchToFt(i){return Math.floor(i/12)+"\u2032"+(i%12)+"\u2033";}
+
+const WEAPONS = {
+  "Club":{dmg:"1d4",type:"bludgeoning",props:"Simple, light",monk:true},
+  "Dagger":{dmg:"1d4",type:"piercing",props:"Simple, finesse, light, thrown 20/60",finesse:true,monk:true},
+  "Handaxe":{dmg:"1d6",type:"slashing",props:"Simple, light, thrown 20/60",monk:true},
+  "Javelin":{dmg:"1d6",type:"piercing",props:"Simple, thrown 30/120",monk:true},
+  "Light hammer":{dmg:"1d4",type:"bludgeoning",props:"Simple, light, thrown 20/60",monk:true},
+  "Mace":{dmg:"1d6",type:"bludgeoning",props:"Simple",monk:true},
+  "Quarterstaff":{dmg:"1d6",type:"bludgeoning",props:"Simple, versatile (1d8)",monk:true},
+  "Sickle":{dmg:"1d4",type:"slashing",props:"Simple, light",monk:true},
+  "Spear":{dmg:"1d6",type:"piercing",props:"Simple, thrown 20/60, versatile (1d8)",monk:true},
+  "Light crossbow":{dmg:"1d8",type:"piercing",props:"Simple, ammunition 80/320, loading, two-handed",ranged:true,two:true},
+  "Dart":{dmg:"1d4",type:"piercing",props:"Simple, finesse, thrown 20/60",finesse:true},
+  "Shortbow":{dmg:"1d6",type:"piercing",props:"Simple, ammunition 80/320, two-handed",ranged:true,two:true},
+  "Sling":{dmg:"1d4",type:"bludgeoning",props:"Simple, ammunition 30/120",ranged:true},
+  "Battleaxe":{dmg:"1d8",type:"slashing",props:"Martial, versatile (1d10)"},
+  "Glaive":{dmg:"1d10",type:"slashing",props:"Martial, heavy, reach, two-handed",two:true},
+  "Greataxe":{dmg:"1d12",type:"slashing",props:"Martial, heavy, two-handed",two:true},
+  "Greatsword":{dmg:"2d6",type:"slashing",props:"Martial, heavy, two-handed",two:true},
+  "Longsword":{dmg:"1d8",type:"slashing",props:"Martial, versatile (1d10)"},
+  "Maul":{dmg:"2d6",type:"bludgeoning",props:"Martial, heavy, two-handed",two:true},
+  "Rapier":{dmg:"1d8",type:"piercing",props:"Martial, finesse",finesse:true},
+  "Scimitar":{dmg:"1d6",type:"slashing",props:"Martial, finesse, light",finesse:true},
+  "Shortsword":{dmg:"1d6",type:"piercing",props:"Martial, finesse, light",finesse:true,monk:true},
+  "Warhammer":{dmg:"1d8",type:"bludgeoning",props:"Martial, versatile (1d10)"},
+  "Longbow":{dmg:"1d8",type:"piercing",props:"Martial, ammunition 150/600, heavy, two-handed",ranged:true,two:true},
+  "Unarmed strike":{dmg:"1",type:"bludgeoning",props:"Melee, always available"}
+};
+/* Phrases in equipment text that stand for a weapon of the player's choice */
+const GENERIC_WEAPONS = [
+  ["any martial melee weapon","Longsword"],
+  ["two martial weapons","Longsword"],
+  ["martial weapon and shield","Longsword"],
+  ["any simple melee weapon","Mace"],
+  ["two simple melee weapons","Spear"],
+  ["any simple weapon","Spear"]
+];
+function characterWeapons(){
+  if(!S.klass) return [];
+  const c=CLASSES[S.klass];
+  const sources=[...Object.values(S.equip),...c.fixedEquip];
+  const found=new Map();
+  for(const raw of sources){
+    const src=raw.toLowerCase();
+    let matched=false;
+    for(const name in WEAPONS){
+      if(name==="Unarmed strike") continue;
+      const re=new RegExp("\\b"+name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"e?s?\\b");
+      if(re.test(src)){ if(!found.has(name)) found.set(name,""); matched=true; }
+    }
+    if(!matched) for(const [phrase,def] of GENERIC_WEAPONS){
+      if(src.includes(phrase) && !found.has(def)){ found.set(def," <small>(example pick)</small>"); break; }
+    }
+  }
+  found.set("Unarmed strike","");
+  return [...found.entries()];
+}
+function attackLine(name){
+  const f=finalScores(), w=WEAPONS[name], pb=profBonus();
+  const monkish=S.klass==="Monk"&&(w.monk||name==="Unarmed strike");
+  let abil="str";
+  if(w.ranged) abil="dex";
+  else if((w.finesse||monkish)&&mod(f.dex)>mod(f.str)) abil="dex";
+  let hit=pb+mod(f[abil]), dmgBonus=mod(f[abil]);
+  const style=S.klass==="Fighter"?(S.classChoices.style||""):"";
+  if(style.startsWith("Archery")&&w.ranged) hit+=2;
+  if(style.startsWith("Dueling")&&!w.ranged&&!w.two) dmgBonus+=2;
+  let die=w.dmg;
+  if(name==="Unarmed strike") die=monkish?"1d4":"1";
+  const dmg=(die==="1"?Math.max(1,1+dmgBonus):die+(dmgBonus?" "+fmtMod(dmgBonus):""))+" "+w.type;
+  return {hit,dmg,props:w.props,abil};
+}
+
+/* [casting time, range, components, duration] for every spell */
+const SPELL_META = {
+  "Acid Splash":["1 action","60 ft.","V, S","Instantaneous"],
+  "Chill Touch":["1 action","120 ft.","V, S","1 round"],
+  "Dancing Lights":["1 action","120 ft.","V, S, M","Concentration, 1 min."],
+  "Druidcraft":["1 action","30 ft.","V, S","Instantaneous"],
+  "Eldritch Blast":["1 action","120 ft.","V, S","Instantaneous"],
+  "Fire Bolt":["1 action","120 ft.","V, S","Instantaneous"],
+  "Guidance":["1 action","Touch","V, S","Concentration, 1 min."],
+  "Light":["1 action","Touch","V, M","1 hour"],
+  "Mage Hand":["1 action","30 ft.","V, S","1 min."],
+  "Mending":["1 minute","Touch","V, S, M","Instantaneous"],
+  "Message":["1 action","120 ft.","V, S, M","1 round"],
+  "Minor Illusion":["1 action","30 ft.","S, M","1 min."],
+  "Poison Spray":["1 action","10 ft.","V, S","Instantaneous"],
+  "Prestidigitation":["1 action","10 ft.","V, S","Up to 1 hour"],
+  "Produce Flame":["1 action","Self","V, S","10 min."],
+  "Ray of Frost":["1 action","60 ft.","V, S","Instantaneous"],
+  "Resistance":["1 action","Touch","V, S, M","Concentration, 1 min."],
+  "Sacred Flame":["1 action","60 ft.","V, S","Instantaneous"],
+  "Shillelagh":["1 bonus action","Touch","V, S, M","1 min."],
+  "Shocking Grasp":["1 action","Touch","V, S","Instantaneous"],
+  "Spare the Dying":["1 action","Touch","V, S","Instantaneous"],
+  "Thaumaturgy":["1 action","30 ft.","V","Up to 1 min."],
+  "True Strike":["1 action","30 ft.","S","Concentration, 1 round"],
+  "Vicious Mockery":["1 action","60 ft.","V","Instantaneous"],
+  "Bless":["1 action","30 ft.","V, S, M","Concentration, 1 min."],
+  "Burning Hands":["1 action","Self (15-ft. cone)","V, S","Instantaneous"],
+  "Charm Person":["1 action","30 ft.","V, S","1 hour"],
+  "Command":["1 action","60 ft.","V","1 round"],
+  "Comprehend Languages":["1 action (ritual)","Self","V, S, M","1 hour"],
+  "Cure Wounds":["1 action","Touch","V, S","Instantaneous"],
+  "Detect Magic":["1 action (ritual)","Self","V, S","Concentration, 10 min."],
+  "Disguise Self":["1 action","Self","V, S","1 hour"],
+  "Entangle":["1 action","90 ft.","V, S","Concentration, 1 min."],
+  "Expeditious Retreat":["1 bonus action","Self","V, S","Concentration, 10 min."],
+  "Faerie Fire":["1 action","60 ft.","V","Concentration, 1 min."],
+  "False Life":["1 action","Self","V, S, M","1 hour"],
+  "Feather Fall":["1 reaction","60 ft.","V, M","1 min."],
+  "Fog Cloud":["1 action","120 ft.","V, S","Concentration, 1 hour"],
+  "Goodberry":["1 action","Touch","V, S, M","Instantaneous"],
+  "Guiding Bolt":["1 action","120 ft.","V, S","1 round"],
+  "Healing Word":["1 bonus action","60 ft.","V","Instantaneous"],
+  "Hellish Rebuke":["1 reaction","60 ft.","V, S","Instantaneous"],
+  "Hideous Laughter":["1 action","30 ft.","V, S, M","Concentration, 1 min."],
+  "Identify":["1 minute (ritual)","Touch","V, S, M","Instantaneous"],
+  "Illusory Script":["1 minute (ritual)","Touch","S, M","10 days"],
+  "Inflict Wounds":["1 action","Touch","V, S","Instantaneous"],
+  "Jump":["1 action","Touch","V, S, M","1 min."],
+  "Longstrider":["1 action","Touch","V, S, M","1 hour"],
+  "Mage Armor":["1 action","Touch","V, S, M","8 hours"],
+  "Magic Missile":["1 action","120 ft.","V, S","Instantaneous"],
+  "Protection from Evil and Good":["1 action","Touch","V, S, M","Concentration, 10 min."],
+  "Sanctuary":["1 bonus action","30 ft.","V, S, M","1 min."],
+  "Shield":["1 reaction","Self","V, S","1 round"],
+  "Shield of Faith":["1 bonus action","60 ft.","V, S, M","Concentration, 10 min."],
+  "Silent Image":["1 action","60 ft.","V, S, M","Concentration, 10 min."],
+  "Sleep":["1 action","90 ft.","V, S, M","1 min."],
+  "Speak with Animals":["1 action (ritual)","Self","V, S","10 min."],
+  "Thunderwave":["1 action","Self (15-ft. cube)","V, S","Instantaneous"],
+  "Unseen Servant":["1 action (ritual)","60 ft.","V, S, M","1 hour"]
+};
+function spellDetails(names){
+  if(!names.length) return "<p>—</p>";
+  return names.map(n=>{
+    const s=SPELLS[n]; if(!s) return "";
+    const m=SPELL_META[n];
+    return '<div class="trait"><b>'+n+'</b> <i>('+(s.lvl?"1st-level":"cantrip")+" "+s.school.toLowerCase()+')</i>'
+      +(m?'<div class="t-desc" style="font-size:.82rem">'+m[0]+' · Range '+m[1]+' · '+m[2]+' · '+m[3]+'</div>':'')
+      +'<div class="t-desc">'+s.d+'</div></div>';
+  }).join('');
+}
+</script>
+<script>
+/* =====================================================================
    APPLICATION STATE & ENGINE
 ===================================================================== */
 const S = {
   step:0,
-  method:"roll",
   rolled:[],
-  assigned:{str:"",dex:"",con:"",int:"",wis:"",cha:""},   // pool assignment (roll/array)
-  pb:{str:8,dex:8,con:8,int:8,wis:8,cha:8},               // point buy
+  assigned:{str:"",dex:"",con:"",int:"",wis:"",cha:""},   // rolled-die index per ability
+  body:{hair:"",eyes:"",skin:"",height:"",weight:"",notes:""},
+  art:null,
   halfElf:["",""],
   race:null, raceChoices:{},
   klass:null, classChoices:{}, skills:[], cantrips:[], spells1:[],
@@ -956,11 +1145,11 @@ const STEPS = [
 ];
 
 /* ---------- derived values ---------- */
-function pool(){ return S.method==="array" ? STANDARD_ARRAY : S.rolled; }
 function baseScores(){
   const out={};
   for(const a of ABILITIES){
-    out[a] = S.method==="pointbuy" ? (+S.pb[a]||8) : (+S.assigned[a]||0);
+    const i=S.assigned[a];
+    out[a]=(i===""||i==null)?0:(S.rolled[+i]||0);
   }
   return out;
 }
@@ -979,12 +1168,7 @@ function finalScores(){
   return out;
 }
 function abilitiesDone(){
-  if(S.method==="pointbuy") return pbSpent()<=POINT_BUY_BUDGET;
-  const vals=ABILITIES.map(a=>S.assigned[a]).filter(v=>v!=="");
-  return vals.length===6;
-}
-function pbSpent(){
-  return ABILITIES.reduce((t,a)=>t+(POINT_BUY_COST[S.pb[a]]??0),0);
+  return S.rolled.length===6 && ABILITIES.every(a=>S.assigned[a]!==""&&S.assigned[a]!=null);
 }
 function grantedSkills(){
   const g=new Set();
@@ -1022,10 +1206,15 @@ function computeAC(){
   if(!armorKey && S.klass) armorKey=CLASSES[S.klass].armorOptions[0];
   if(!armorKey) armorKey="None";
   const a=ARMOR[armorKey]||ARMOR["None"];
-  let ac=a.calc(f);
-  if(S.shield) ac+=2;
-  if(S.klass==="Fighter" && (S.classChoices.style||"").startsWith("Defense")) ac+=1;
-  return {ac, armorKey, stealthDis:!!a.stealthDis};
+  const styleBonus=(S.klass==="Fighter" && (S.classChoices.style||"").startsWith("Defense"))?1:0;
+  const shieldBonus=S.shield?2:0;
+  const ac=a.calc(f)+shieldBonus+styleBonus;
+  // Touch AC ignores armor, shield, and natural armor; flat-footed loses Dex
+  let touch=10+mod(f.dex);
+  if(armorKey==="Unarmored (Monk)") touch+=mod(f.wis);
+  if(armorKey==="Unarmored (Barbarian)") touch+=mod(f.con);
+  const flat=Math.min(ac, a.calc(Object.assign({},f,{dex:10}))+shieldBonus+styleBonus);
+  return {ac, touch, flat, armorKey, stealthDis:!!a.stealthDis};
 }
 function computeHP(){
   const f=finalScores();
@@ -1063,52 +1252,38 @@ function renderNav(){
 
 /* ---------- Step 1: Abilities ---------- */
 function renderAbilities(){
-  const f=finalScores(), base=baseScores(), rb=racialBonus();
-  let methodUI="";
-  if(S.method==="roll"){
-    methodUI='<div class="rules-note"><b>Rolling for scores:</b> roll 4d6 and drop the lowest die, six times. Assign the six results to your abilities below. The classic, swingy way to make a hero.</div>'
-      +'<button class="btn gold" data-act="roll-abilities">🎲 Roll 4d6 (drop lowest) × 6</button>'
-      +'<div class="roll-pool">'+(S.rolled.length? S.rolled.map(v=>'<div class="rolled-die">'+v+'</div>').join('') : '<span style="color:var(--ink-dim);font-style:italic">No dice cast yet…</span>')+'</div>';
-  } else if(S.method==="array"){
-    methodUI='<div class="rules-note"><b>Standard Array:</b> assign the fixed set <b>15, 14, 13, 12, 10, 8</b> to your six abilities. Balanced and fast.</div>';
-  } else {
-    methodUI='<div class="rules-note"><b>Point Buy:</b> you have <b>27 points</b>. Scores cost: 8→0, 9→1, 10→2, 11→3, 12→4, 13→5, 14→7, 15→9. All scores start at 8; maximum 15 before racial bonuses.</div>'
-      +'<div class="pb-remaining">Points remaining: <b>'+(POINT_BUY_BUDGET-pbSpent())+'</b> / '+POINT_BUY_BUDGET+(pbSpent()>POINT_BUY_BUDGET?' <span style="color:var(--blood-bright)">— over budget!</span>':'')+'</div>';
-  }
+  const f=finalScores(), rb=racialBonus();
+  const abilOfIdx=i=>ABILITIES.find(a=>S.assigned[a]!=="" && S.assigned[a]!=null && +S.assigned[a]===i);
+  const diceUI=S.rolled.length
+    ? S.rolled.map((v,i)=>{
+        const owner=abilOfIdx(i);
+        return '<div class="rolled-die'+(owner?' assigned':'')+'" draggable="true" data-die="'+i+'" title="Drag me onto an ability">'+v
+          +(owner?'<div class="assigned-to">'+ABILITY_INFO[owner].name.slice(0,3)+'</div>':'')+'</div>';
+      }).join('')
+    : '<span style="color:var(--ink-dim);font-style:italic">No dice cast yet — roll to forge your fate…</span>';
 
   const boxes=ABILITIES.map(a=>{
-    const info=ABILITY_INFO[a];
-    let control;
-    if(S.method==="pointbuy"){
-      control='<select data-pb="'+a+'">'+[8,9,10,11,12,13,14,15].map(v=>'<option value="'+v+'"'+(S.pb[a]==v?' selected':'')+'>'+v+'</option>').join('')+'</select>';
-    } else {
-      const p=pool(), taken={};
-      ABILITIES.forEach(x=>{ if(x!==a && S.assigned[x]!=="") taken[S.assigned[x]]=(taken[S.assigned[x]]||0)+1; });
-      const avail=[];
-      const counts={};
-      p.forEach(v=>{counts[v]=(counts[v]||0)+1});
-      for(const v in counts){ const free=counts[v]-(taken[v]||0); if(free>0 || S.assigned[a]==v) avail.push(v); }
-      control='<select data-assign="'+a+'"'+(p.length?'':' disabled')+'><option value="">—</option>'
-        +avail.sort((x,y)=>y-x).map(v=>'<option value="'+v+'"'+(S.assigned[a]==v?' selected':'')+'>'+v+'</option>').join('')+'</select>';
-    }
-    const total=f[a], hasBase=(S.method==="pointbuy")||S.assigned[a]!=="";
-    return '<div class="ability-box">'
+    const info=ABILITY_INFO[a], cur=S.assigned[a];
+    const opts=[];
+    S.rolled.forEach((v,i)=>{
+      const owner=abilOfIdx(i);
+      if(!owner||owner===a) opts.push('<option value="'+i+'"'+(cur!==""&&cur!=null&&+cur===i?' selected':'')+'>'+v+'</option>');
+    });
+    const total=f[a], hasBase=cur!==""&&cur!=null;
+    return '<div class="ability-box" data-abil="'+a+'">'
       +'<div class="ab-name">'+info.name+'</div><div class="ab-desc">'+info.desc+'</div>'
-      +control
-      +'<div class="ab-mod">'+(hasBase?('Score <b>'+total+'</b> · mod <b>'+fmtMod(mod(total))+'</b>'):'&nbsp;')+'</div>'
+      +'<select data-assign="'+a+'"'+(S.rolled.length?'':' disabled')+'><option value="">—</option>'+opts.join('')+'</select>'
+      +'<div class="ab-mod">'+(hasBase?('Score <b>'+total+'</b> · mod <b>'+fmtMod(mod(total))+'</b>'):'<span style="color:var(--ink-dim);font-size:.85rem">drop a die here</span>')+'</div>'
       +'<div class="ab-race">'+(rb[a]?('+'+rb[a]+' racial'):'')+'</div>'
       +'</div>';
   }).join('');
 
   $("step-abilities").innerHTML=
-    '<div class="panel"><h2><span class="ornament">⚔</span> Determine Ability Scores</h2>'
+    '<div class="panel"><h2><span class="ornament">⚔</span> Roll Ability Scores</h2>'
     +'<p class="lede">Six abilities define every adventurer: Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma. Your modifier is (score − 10) ÷ 2, rounded down.</p>'
-    +'<div class="method-tabs">'
-    +'<button data-method="roll" class="'+(S.method==="roll"?"active":"")+'">🎲 Roll 4d6</button>'
-    +'<button data-method="array" class="'+(S.method==="array"?"active":"")+'">Standard Array</button>'
-    +'<button data-method="pointbuy" class="'+(S.method==="pointbuy"?"active":"")+'">Point Buy (27)</button>'
-    +'</div>'
-    +methodUI
+    +'<div class="rules-note"><b>Rolling for scores:</b> roll 4d6 and drop the lowest die, six times. Then <b>drag each die onto the ability</b> where you want it — drop onto an occupied ability to swap. (The dropdowns work too.)</div>'
+    +'<button class="btn gold" data-act="roll-abilities">🎲 Roll 4d6 (drop lowest) × 6</button>'
+    +'<div class="roll-pool">'+diceUI+'</div>'
     +'<div class="ability-grid">'+boxes+'</div>'
     +(S.race?'<div class="rules-note">Racial bonuses from <b>'+S.race+'</b> are shown in green and included in the totals.</div>':'')
     +drill("📖 Rules: ability checks, saves & modifiers",
@@ -1204,7 +1379,9 @@ function renderClass(){
         const isPicked=picked.includes(sp)||isAuto;
         return '<label class="pick-item'+(isPicked?' picked':'')+(isAuto?' locked':'')+'">'
           +'<input type="checkbox" data-spell="'+group+'" data-name="'+sp+'"'+(isPicked?' checked':'')+(isAuto?' disabled':'')+'>'
-          +'<span><span class="pi-name">'+sp+'</span><span class="pi-sub">'+s.school+(isAuto?' · always prepared (domain)':'')+' — '+s.d+'</span></span></label>';
+          +'<span><span class="pi-name">'+sp+'</span><span class="pi-sub">'+s.school+(isAuto?' · always prepared (domain)':'')
+          +(SPELL_META[sp]?' · '+SPELL_META[sp][0]+' · '+SPELL_META[sp][1]+' · '+SPELL_META[sp][2]+' · '+SPELL_META[sp][3]:'')
+          +' — '+s.d+'</span></span></label>';
       }).join('');
       const modeNote = sc.mode==="prepared" ? (sc.prepNote+" With your current scores you prepare <b>"+l1count+"</b>.")
         : sc.mode==="book" ? sc.prepNote : "You know these spells permanently.";
@@ -1303,6 +1480,42 @@ function renderDetails(){
     '<div class="choice-card'+(S.alignment===a?' selected':'')+'" data-pick-align="'+a+'" style="min-height:auto">'
     +'<h3 style="font-size:.98rem">'+a+'</h3><div class="tagline">'+d+'</div></div>').join('');
   const P=S.persona;
+  const phys=PHYSIQUE[S.race]||PHYSIQUE.Human;
+  const skinLabel=S.race==="Dragonborn"?"Scales":"Skin tone";
+  const selBody=(key,label,options)=>{
+    const cur=S.body[key];
+    const custom=cur && cur!=="__custom" && !options.includes(cur);
+    return '<div><div style="font-variant:small-caps;color:var(--ink-dim)">'+label+'</div>'
+      +'<select data-body="'+key+'" style="width:100%;background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:7px;font-family:var(--serif)">'
+      +'<option value="">— choose —</option>'
+      +options.map(o=>'<option'+(cur===o?' selected':'')+'>'+o+'</option>').join('')
+      +'<option value="__custom"'+((custom||cur==="__custom")?' selected':'')+'>✎ In your own words…</option>'
+      +'</select>'
+      +((custom||cur==="__custom")?'<input type="text" data-bodycustom="'+key+'" value="'+(custom?cur.replace(/"/g,"&quot;"):"")+'" placeholder="Describe it your way…" style="width:100%;margin-top:4px;background:#191208;color:var(--ink);border:1px solid var(--border-dim);border-radius:4px;padding:6px;font-family:var(--serif)">':'')
+      +'</div>';
+  };
+  const heightOpts=rangeOpts(phys.height[0],phys.height[1],1).map(inchToFt);
+  const weightOpts=rangeOpts(phys.weight[0],phys.weight[1],5).map(w=>w+" lb.");
+  const physiqueUI=
+    '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Physical Description'
+    +' <small style="color:var(--ink-dim);font-size:.72rem;letter-spacing:0">'+(S.race?('options tuned to the '+S.race):'choose a race for tailored lists')+'</small></h3>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px;margin-top:6px">'
+    +selBody("height","Height",heightOpts)
+    +selBody("weight","Weight",weightOpts)
+    +selBody("hair","Hair",phys.hair)
+    +selBody("eyes","Eyes",phys.eyes)
+    +selBody("skin",skinLabel,phys.skin)
+    +'</div>'
+    +'<div style="margin-top:10px"><div style="font-variant:small-caps;color:var(--ink-dim)">Distinguishing features — scars, tattoos, bearing, voice, anything at all</div>'
+    +'<textarea data-bodynotes rows="3" placeholder="A burn scar across the left brow; walks with a hunter\'s quiet; smells faintly of temple incense…" style="width:100%;background:#191208;color:var(--ink);border:1px solid var(--border-dim);border-radius:5px;padding:8px;font-family:var(--serif)">'+(S.body.notes||"")+'</textarea></div>';
+  const artUI=
+    '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Character Art</h3>'
+    +'<div class="art-drop" data-act="art-pick">'
+    +(S.art
+      ?'<img src="'+S.art+'" alt="Character portrait"><div style="margin-top:8px">Click to replace · <span data-act="art-clear" style="color:var(--blood-bright);cursor:pointer">✖ remove</span></div>'
+      :'🖼 Click to add a portrait — JPG or PNG<br><small>It becomes a half-page insert on your character sheet</small>')
+    +'</div>'
+    +'<input type="file" id="art-file" accept="image/png,image/jpeg" style="display:none">';
   $("step-details").innerHTML=
     '<div class="panel"><h2><span class="ornament">🕯</span> Name &amp; Nature</h2>'
     +'<p class="lede">Give your hero a name, an alignment, and the sparks of personality that bring them to life at the table.</p>'
@@ -1311,6 +1524,7 @@ function renderDetails(){
     +'<button class="btn" data-act="suggest-name">⚂ Suggest a name</button></div>'
     +'<h3 style="color:var(--gold);font-variant:small-caps">Alignment</h3>'
     +'<div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">'+alignCards+'</div>'
+    +physiqueUI+artUI
     +'<h3 style="color:var(--gold);font-variant:small-caps;margin-top:16px">Personality</h3>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">'
     +[["traits","Personality Traits","e.g. I face problems head-on; a simple direct solution is best."],
@@ -1374,15 +1588,28 @@ function renderSummary(){
     c.fixedEquip.forEach(e=>equipList.push(e));
     if(S.background) BACKGROUNDS[S.background].equipment.forEach(e=>equipList.push(e));
 
+    const skinLabel=S.race==="Dragonborn"?"Scales":"Skin";
+    const atkRows=characterWeapons().map(([name,note])=>{
+      const L=attackLine(name);
+      return '<div class="atk-line"><span><b>'+name+'</b>'+note+'<br><small>'+L.props+'</small></span>'
+        +'<span style="text-align:right;white-space:nowrap"><b>'+fmtMod(L.hit)+'</b> to hit<br>'+L.dmg+'</span></div>';
+    }).join('');
+    const atkNotes='<div style="font-size:.75rem;color:#6b5a35;margin-top:6px">To hit = proficiency + ability modifier (Dex for ranged/finesse, otherwise Str). '
+      +(S.klass==="Barbarian"?"Add +2 damage to Strength melee attacks while raging. ":"")
+      +(S.klass==="Rogue"?"Sneak Attack adds +1d6 once per turn when you have advantage or an ally is adjacent to the target. ":"")
+      +(S.klass==="Monk"?"Martial Arts: unarmed strikes deal 1d4 and may use Dex; bonus-action unarmed strike after attacking. ":"")+'</div>';
+
     let spellBox="";
     const sc=c.spellcasting;
     if(sc){
       const dc=8+pb+mod(f[sc.ability]), atk=pb+mod(f[sc.ability]);
       const allL1=[...new Set([...autoSpells(),...S.spells1])];
-      spellBox='<div class="sheet-box"><h4>Spellcasting — '+ABILITY_INFO[sc.ability].name+'</h4>'
+      spellBox='<div class="sheet-box" style="grid-column:1/-1"><h4>Spellcasting — '+ABILITY_INFO[sc.ability].name+'</h4>'
         +'<div>Spell save DC <b>'+dc+'</b> · Spell attack <b>'+fmtMod(atk)+'</b> · '+sc.slots+'</div>'
         +'<div style="margin-top:6px"><b>Cantrips:</b> '+(S.cantrips.join(", ")||"—")+'</div>'
-        +'<div><b>1st Level:</b> '+(allL1.join(", ")||"—")+'</div></div>';
+        +'<div><b>1st Level:</b> '+(allL1.join(", ")||"—")+'</div>'
+        +drill("Full spell details — casting time, range, components, duration", spellDetails(S.cantrips.concat(allL1)))
+        +'</div>';
     }
 
     const persona=Object.entries({["Personality"]:S.persona.traits,Ideals:S.persona.ideals,Bonds:S.persona.bonds,Flaws:S.persona.flaws})
@@ -1391,9 +1618,9 @@ function renderSummary(){
     sheet='<div class="sheet" id="print-sheet">'
       +'<h2><span class="char-name">'+(S.name||"Unnamed Hero")+'</span></h2>'
       +'<div class="id-line">Level 1 '+S.race+' '+S.klass+(S.background?' · '+S.background:'')+(S.alignment?' · '+S.alignment:'')+'</div>'
-      +'<div class="sheet-abilities">'+ABILITIES.map(a=>'<div class="sheet-ab"><div class="sa-name">'+ABILITY_INFO[a].name.slice(0,3)+'</div><div class="sa-mod">'+fmtMod(mod(f[a]))+'</div><div class="sa-score">'+f[a]+'</div></div>').join('')+'</div>'
+      +'<div class="sheet-abilities">'+ABILITIES.map(a=>'<div class="sheet-ab" title="'+ABILITY_INFO[a].name+' — '+ABILITY_INFO[a].desc+'"><div class="sa-name">'+ABILITY_INFO[a].name.slice(0,3)+'</div><div class="sa-mod">'+fmtMod(mod(f[a]))+'</div><div class="sa-score">'+f[a]+'</div></div>').join('')+'</div>'
       +'<div class="combat-row">'
-      +'<div class="combat-stat"><div class="cs-val">'+acInfo.ac+'</div><div class="cs-label">Armor Class</div></div>'
+      +'<div class="combat-stat"><div class="cs-val">'+acInfo.ac+'</div><div class="cs-label">Armor Class</div><div class="cs-sub">Touch '+acInfo.touch+' · Flat-footed '+acInfo.flat+'</div></div>'
       +'<div class="combat-stat"><div class="cs-val">'+hp+'</div><div class="cs-label">Hit Points</div></div>'
       +'<div class="combat-stat"><div class="cs-val">d'+c.hitDie+'</div><div class="cs-label">Hit Die</div></div>'
       +'<div class="combat-stat"><div class="cs-val">'+fmtMod(mod(f.dex))+'</div><div class="cs-label">Initiative</div></div>'
@@ -1404,6 +1631,7 @@ function renderSummary(){
       +'<div class="sheet-grid">'
       +'<div class="sheet-box"><h4>Saving Throws</h4>'+saveLines+'</div>'
       +'<div class="sheet-box"><h4>Skills</h4>'+skillLines+'</div>'
+      +'<div class="sheet-box"><h4>Attacks</h4>'+atkRows+atkNotes+'</div>'
       +'<div class="sheet-box"><h4>Features &amp; Traits</h4><ul>'+feats.map(([n,d])=>'<li><span class="feature-name">'+n+'.</span> '+d+'</li>').join('')+'</ul></div>'
       +'<div class="sheet-box"><h4>Equipment</h4><ul>'+(equipList.map(e=>'<li>'+e+'</li>').join('')||'<li>—</li>')+'</ul>'
       +'<div style="margin-top:6px"><b>Armor worn:</b> '+acInfo.armorKey+(S.shield?' + shield':'')+(acInfo.stealthDis?' (Stealth disadvantage)':'')+'</div></div>'
@@ -1411,7 +1639,16 @@ function renderSummary(){
       +'<div class="sheet-box"><h4>Proficiencies &amp; Languages</h4>'
       +'<div><b>Armor:</b> '+c.armorProf+'</div><div><b>Weapons:</b> '+c.weaponProf+'</div><div><b>Tools:</b> '+[c.toolProf,...(S.background?BACKGROUNDS[S.background].tools:[])].filter(x=>x&&x!=="None").join("; ")+'</div>'
       +'<div><b>Languages:</b> '+r.languages.join(", ")+(S.background&&BACKGROUNDS[S.background].languages?(" + "+BACKGROUNDS[S.background].languages+" of your choice"):"")+'</div></div>'
+      +'<div class="sheet-box"><h4>Appearance</h4>'
+      +([["Height",S.body.height],["Weight",S.body.weight],["Hair",S.body.hair],["Eyes",S.body.eyes],[skinLabel,S.body.skin]]
+        .filter(([,v])=>v&&v!=="__custom").map(([k,v])=>'<div><b>'+k+':</b> '+v+'</div>').join('')
+        ||'<i>Not yet described — see Step VI…</i>')
+      +(S.body.notes?'<div style="margin-top:6px;font-style:italic">'+S.body.notes+'</div>':'')
+      +'</div>'
       +'<div class="sheet-box"><h4>Persona</h4>'+persona+'</div>'
+      +'<div class="sheet-art">'+(S.art
+        ?'<img src="'+S.art+'" alt="Character art">'
+        :'<div style="color:#a89a70;font-style:italic;text-align:center">A half page awaits your hero\'s portrait —<br>add a JPG or PNG in Step VI</div>')+'</div>'
       +'</div></div>';
   } else {
     sheet='<div class="rules-note">Choose at least a race and a class to see your character sheet.</div>';
@@ -1442,7 +1679,14 @@ function save(){ try{ localStorage.setItem("forge-of-heroes", JSON.stringify(S))
 function load(){
   try{
     const raw=localStorage.getItem("forge-of-heroes");
-    if(raw){ const d=JSON.parse(raw); Object.assign(S,d); }
+    if(raw){
+      const d=JSON.parse(raw);
+      delete d.method; delete d.pb;
+      // migrate pre-drag-and-drop saves that stored scores instead of die indices
+      if(d.assigned && Object.values(d.assigned).some(v=>+v>5)) d.assigned={str:"",dex:"",con:"",int:"",wis:"",cha:""};
+      if(!d.body) d.body={hair:"",eyes:"",skin:"",height:"",weight:"",notes:""};
+      Object.assign(S,d);
+    }
   }catch(e){}
 }
 
@@ -1452,10 +1696,9 @@ function roll4d6dl(){
 }
 
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-goto],[data-method],[data-act],[data-pick-race],[data-pick-class],[data-pick-bg],[data-pick-align]");
+  const t=e.target.closest("[data-goto],[data-act],[data-pick-race],[data-pick-class],[data-pick-bg],[data-pick-align]");
   if(!t) return;
   if(t.dataset.goto!==undefined){ S.step=+t.dataset.goto; render(); window.scrollTo({top:0,behavior:"smooth"}); return; }
-  if(t.dataset.method){ S.method=t.dataset.method; S.assigned={str:"",dex:"",con:"",int:"",wis:"",cha:""}; render(); return; }
   if(t.dataset.pickRace!==undefined){
     S.race=t.dataset.pickRace; S.raceChoices={}; S.halfElf=["",""];
     render(); return;
@@ -1482,6 +1725,8 @@ document.addEventListener("click",e=>{
     S.name=names[Math.floor(Math.random()*names.length)];
     render(); return;
   }
+  if(t.dataset.act==="art-clear"){ S.art=null; render(); return; }
+  if(t.dataset.act==="art-pick"){ $("art-file").click(); return; }
   if(t.dataset.act==="print"){ window.print(); return; }
   if(t.dataset.act==="download"){
     const data={meta:"Forge of Heroes — D&D 5e (SRD 5.1) level 1 character",character:S,finalScores:finalScores(),ac:computeAC().ac,hp:computeHP()};
@@ -1502,7 +1747,23 @@ document.addEventListener("click",e=>{
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.dataset.assign){ S.assigned[t.dataset.assign]=t.value; render(); return; }
-  if(t.dataset.pb){ S.pb[t.dataset.pb]=+t.value; render(); return; }
+  if(t.dataset.body){ S.body[t.dataset.body]=t.value; render(); return; }
+  if(t.id==="art-file"){
+    const file=t.files&&t.files[0];
+    if(!file) return;
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const maxSide=1000, scale=Math.min(1,maxSide/Math.max(img.width,img.height));
+      const cv=document.createElement("canvas");
+      cv.width=Math.round(img.width*scale); cv.height=Math.round(img.height*scale);
+      cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+      S.art=cv.toDataURL(file.type==="image/png"?"image/png":"image/jpeg",0.85);
+      URL.revokeObjectURL(url);
+      render();
+    };
+    img.src=url;
+    return;
+  }
   if(t.dataset.halfelf!==undefined){ S.halfElf[+t.dataset.halfelf]=t.value; render(); return; }
   if(t.dataset.racechoice){ S.raceChoices[t.dataset.racechoice]=t.value; render(); return; }
   if(t.dataset.classchoice){ S.classChoices[t.dataset.classchoice]=t.value; render(); return; }
@@ -1537,7 +1798,41 @@ document.addEventListener("change",e=>{
   if(t.dataset.persona){ S.persona[t.dataset.persona]=t.value; save(); return; }
 });
 document.addEventListener("input",e=>{
-  if(e.target.id==="char-name"){ S.name=e.target.value; save(); }
+  const t=e.target;
+  if(t.id==="char-name"){ S.name=t.value; save(); }
+  if(t.dataset&&t.dataset.bodycustom){ S.body[t.dataset.bodycustom]=t.value||"__custom"; save(); }
+  if(t.dataset&&("bodynotes" in t.dataset)){ S.body.notes=t.value; save(); }
+});
+
+/* ---------- drag & drop: rolled dice onto abilities ---------- */
+document.addEventListener("dragstart",e=>{
+  const die=e.target.closest&&e.target.closest(".rolled-die[data-die]");
+  if(die){ e.dataTransfer.setData("text/plain",die.dataset.die); e.dataTransfer.effectAllowed="move"; die.classList.add("dragging"); }
+});
+document.addEventListener("dragend",()=>{
+  document.querySelectorAll(".rolled-die.dragging").forEach(d=>d.classList.remove("dragging"));
+  document.querySelectorAll(".ability-box.drop-ok").forEach(b=>b.classList.remove("drop-ok"));
+});
+document.addEventListener("dragover",e=>{
+  const box=e.target.closest&&e.target.closest(".ability-box[data-abil]");
+  if(box){ e.preventDefault(); e.dataTransfer.dropEffect="move"; box.classList.add("drop-ok"); }
+});
+document.addEventListener("dragleave",e=>{
+  const box=e.target.closest&&e.target.closest(".ability-box[data-abil]");
+  if(box) box.classList.remove("drop-ok");
+});
+document.addEventListener("drop",e=>{
+  const box=e.target.closest&&e.target.closest(".ability-box[data-abil]");
+  if(!box) return;
+  e.preventDefault();
+  const idx=e.dataTransfer.getData("text/plain");
+  if(idx==="") return;
+  const a=box.dataset.abil;
+  const prevOwner=ABILITIES.find(x=>x!==a && S.assigned[x]!=="" && S.assigned[x]!=null && +S.assigned[x]===+idx);
+  const displaced=S.assigned[a];
+  S.assigned[a]=idx;
+  if(prevOwner) S.assigned[prevOwner]=(displaced!==""&&displaced!=null)?displaced:"";
+  render();
 });
 
 /* =====================================================================

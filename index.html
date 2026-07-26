@@ -238,7 +238,13 @@
   .sheet h2{font-variant:small-caps;letter-spacing:.06em;border-bottom:2px solid #8a6d1f;padding-bottom:6px;color:#5b4310}
   .sheet h2 .char-name{color:#2a1f10}
   .sheet .id-line{font-style:italic;color:#6b5a35;margin:4px 0 16px}
-  .sheet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+  /* Boxes size to their content rather than stretching, so a short box like
+     Saving Throws does not leave dead space beneath it. */
+  .sheet-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;align-items:start;grid-auto-flow:row dense}
+  /* Two short boxes sharing one column */
+  .sheet-stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+  /* Prose-heavy boxes read badly in a narrow column, so let them take two */
+  .sheet-box.span2{grid-column:span 2}
   .sheet-box{border:1.5px solid #8a6d1f;border-radius:6px;padding:12px 14px;background:rgba(255,252,240,.5)}
   .sheet-box h4{font-variant:small-caps;color:#8e1c1c;letter-spacing:.05em;border-bottom:1px solid #c9b98a;margin-bottom:8px;padding-bottom:3px}
   .sheet-abilities{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;text-align:center;margin:10px 0}
@@ -350,6 +356,9 @@
   @media (max-width:640px){
     .sheet-abilities{grid-template-columns:repeat(3,1fr)}
     .panel{padding:18px 14px}
+    /* below this width the grid is a single column, where a 2-column span
+       would create a phantom second column and overflow the page */
+    .sheet-box.span2{grid-column:auto}
   }
 </style>
 </head>
@@ -4882,10 +4891,12 @@ function renderSummary(){
       +'<div class="combat-stat"><div class="cs-val">'+(10+mod(f.wis)+(profSkills.has("Perception")?pb:0))+'</div><div class="cs-label">Passive Perception</div></div>'
       +'</div>'
       +'<div class="sheet-grid">'
-      +'<div class="sheet-box"><h4>Saving Throws</h4>'+saveLines+'</div>'
+      +'<div class="sheet-stack">'
+      +  '<div class="sheet-box"><h4>Saving Throws</h4>'+saveLines+'</div>'
+      +  '<div class="sheet-box"><h4>Attacks</h4>'+atkRows+atkNotes+'</div>'
+      +'</div>'
       +'<div class="sheet-box"><h4>Skills</h4>'+skillLines+'</div>'
-      +'<div class="sheet-box"><h4>Attacks</h4>'+atkRows+atkNotes+'</div>'
-      +'<div class="sheet-box"><h4>Features &amp; Traits</h4><ul>'+feats.map(([n,d])=>'<li><span class="feature-name">'+n+'.</span> '+d+'</li>').join('')+'</ul></div>'
+      +'<div class="sheet-box span2"><h4>Features &amp; Traits</h4><ul>'+feats.map(([n,d])=>'<li><span class="feature-name">'+n+'.</span> '+d+'</li>').join('')+'</ul></div>'
       +'<div class="sheet-box"><h4>Equipment</h4><ul>'+(equipList.map(e=>'<li>'+e+'</li>').join('')||'<li>—</li>')+'</ul>'
       +'<div style="margin-top:6px"><b>Armor worn:</b> '+acInfo.armorKey+(S.shield?' + shield':'')+(acInfo.stealthDis?' (Stealth disadvantage)':'')+'</div></div>'
       +spellBox

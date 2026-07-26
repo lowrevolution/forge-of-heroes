@@ -1,0 +1,54 @@
+NOTICE
+======
+
+Forge of Heroes — a fifth-edition-compatible character generator.
+
+
+Attribution required by CC BY 4.0
+---------------------------------
+
+This work includes material taken from the System Reference Document 5.1
+("SRD 5.1") by Wizards of the Coast LLC and available at
+https://www.dndbeyond.com/srd. The SRD 5.1 is licensed under the Creative
+Commons Attribution 4.0 International License available at
+https://creativecommons.org/licenses/by/4.0/legalcode.
+
+This work includes material taken from the System Reference Document 5.2
+("SRD 5.2") by Wizards of the Coast LLC and available at
+https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative
+Commons Attribution 4.0 International License available at
+https://creativecommons.org/licenses/by/4.0/legalcode.
+
+
+Scope of that material
+----------------------
+
+SRD-derived content in this project includes the six abilities and skill list,
+the twelve core classes and their level 1-20 progressions, the core lineages,
+backgrounds, spells, feats, magic items, armor and weapon statistics, and the
+underlying rules mathematics (proficiency bonus, spell slot progressions,
+hit points, armor class, saving throws, and attack calculations).
+
+Content outside those documents — the ten expansion classes, their subclasses,
+and the expansion lineages — are original implementations of archetypes in
+common community use. All descriptive and flavor prose throughout this project
+was written for it and is not reproduced from any publisher's books.
+
+
+Trademarks
+----------
+
+Forge of Heroes is an independent fan tool. It is not affiliated with,
+endorsed, sponsored, or approved by Wizards of the Coast LLC.
+
+The Creative Commons Attribution 4.0 International License covers the SRD
+content only. It grants no rights in any trademark. Wizards of the Coast,
+Dungeons & Dragons, and D&D are trademarks of Wizards of the Coast LLC, used
+here only nominatively to identify the rules system this tool is compatible
+with. All trademarks are the property of their respective owners.
+
+
+Software license
+----------------
+
+The generator software is released under the MIT License. See LICENSE.

@@ -1,6 +1,8 @@
 # ⚔ Forge of Heroes
 
-A complete **Dungeons & Dragons 5th Edition character generator** in a single, self-contained HTML file. No build step, no dependencies, no internet required — just open `index.html` in any browser.
+A complete **fifth-edition-compatible tabletop character generator** in a single, self-contained HTML file. No build step, no dependencies, no internet required — just open `index.html` in any browser.
+
+**▶ [Play it here](https://lowrevolution.github.io/forge-of-heroes/)**
 
 Supports characters from **level 1 to 20**, with experience thresholds, hit points, spell slots, subclasses, ability score improvements, and feats all tied to level.
 
@@ -51,6 +53,18 @@ open index.html
 
 That's it.
 
+## Privacy
+
+There is no backend and no telemetry. The page makes **zero external requests** — no CDN, no fonts, no analytics — so it runs fully offline once loaded. Characters are saved to your browser's `localStorage` and never leave your machine; an uploaded portrait is stored as a data URI in that same local storage and is never sent anywhere.
+
 ## Licensing
 
-Game mechanics are drawn from openly licensed sources — the [SRD 5.1](https://dnd.wizards.com/resources/systems-reference-document) and SRD 5.2 under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/), and ORC-licensed community material. Expansion classes, races, and subclasses outside those documents are original implementations of widely used community archetypes; all descriptive prose in this project is original text written for it, not reproduced from any publisher's books.
+The generator software is released under the [MIT License](LICENSE).
+
+Game content is drawn from openly licensed sources. Required attribution:
+
+> This work includes material taken from the System Reference Document 5.1 (“SRD 5.1”) and the System Reference Document 5.2 (“SRD 5.2”) by Wizards of the Coast LLC and available at https://www.dndbeyond.com/srd. The SRD 5.1 and SRD 5.2 are licensed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/legalcode).
+
+Expansion classes, subclasses, and lineages outside those documents are original implementations of widely used community archetypes, and all descriptive prose in this project was written for it rather than reproduced from any publisher's books. See [NOTICE](NOTICE) for the full attribution and scope.
+
+Forge of Heroes is an independent fan tool. It is **not affiliated with, endorsed, sponsored, or approved by Wizards of the Coast LLC**. All trademarks are the property of their respective owners.

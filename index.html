@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forge of Heroes — D&D 5e Character Generator</title>
+<title>Forge of Heroes — Fifth Edition Character Generator</title>
 <style>
   /* ============ THEME ============ */
   :root{
@@ -341,6 +341,23 @@
   .sheet .trait b{color:#8e1c1c}
   .sheet .trait .t-desc{color:#4a3c22}
 
+  /* ============ ATTRIBUTION FOOTER ============ */
+  #site-footer{
+    margin-top:40px;padding:18px 10px 0;text-align:center;
+    font-size:.76rem;line-height:1.6;color:#7d7256;max-width:80ch;margin-left:auto;margin-right:auto;
+  }
+  #site-footer p{margin:6px 0}
+  #site-footer a{color:var(--border-gold);text-decoration:underline}
+  #site-footer a:hover{color:var(--gold)}
+  .rule-line-sm{
+    width:min(300px,60%);height:1px;margin:0 auto 14px;
+    background:linear-gradient(90deg,transparent,var(--border-dim),transparent);
+  }
+  .sheet-attribution{
+    margin-top:14px;padding-top:8px;border-top:1px solid #c9b98a;
+    font-size:.68rem;line-height:1.45;color:#6b5a35;text-align:center;
+  }
+
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-track{background:var(--bg-deep)}
   ::-webkit-scrollbar-thumb{background:var(--border-dim);border-radius:5px}
@@ -388,6 +405,8 @@
     /* A half-page portrait, not a full page of it */
     .sheet-art{min-height:0;padding:0;border:none;background:none}
     .sheet-art img{max-height:95mm;width:auto}
+    /* rem-scaling would shrink this below legibility */
+    .sheet-attribution{font-size:6.8pt;margin-top:8px;padding-top:5px;break-inside:avoid}
   }
   /* screen-only: this block follows @media print, so without the `screen`
      qualifier a narrow paper size would override the print grid */
@@ -404,7 +423,7 @@
 <div id="app">
   <header class="banner">
     <h1>⚔ Forge of Heroes ⚔</h1>
-    <div class="sub">A Dungeons &amp; Dragons 5th Edition Character Generator — built on the SRD 5.1 rules</div>
+    <div class="sub">A character generator for fifth-edition-compatible tabletop roleplaying — built on the open SRD rules</div>
     <div class="rule-line"></div>
   </header>
 
@@ -418,6 +437,14 @@
   <section class="step" id="step-equipment"></section>
   <section class="step" id="step-details"></section>
   <section class="step" id="step-summary"></section>
+
+  <footer id="site-footer">
+    <div class="rule-line-sm"></div>
+    <p>This work includes material taken from the System Reference Document 5.1 (“SRD 5.1”) and the System Reference Document 5.2 (“SRD 5.2”) by Wizards of the Coast LLC, available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noopener noreferrer">dndbeyond.com/srd</a>. The SRD 5.1 and SRD 5.2 are licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 4.0 International License</a>.</p>
+    <p>Classes, subclasses, and lineages beyond those documents are original implementations of common community archetypes, and all descriptive prose here was written for this project.</p>
+    <p>Forge of Heroes is an independent fan tool. It is not affiliated with, endorsed, sponsored, or approved by Wizards of the Coast LLC. All trademarks are the property of their respective owners.</p>
+    <p>Generator code released under the MIT License.</p>
+  </footer>
 </div>
 
 <button id="dice-toggle" title="Open dice tray">🎲</button>
@@ -450,7 +477,7 @@
 <script>
 "use strict";
 /* =====================================================================
-   RULES CONSTANTS  (D&D 5e SRD 5.1)
+   RULES CONSTANTS  (SRD 5.1)
 ===================================================================== */
 const ABILITIES = ["str","dex","con","int","wis","cha"];
 const ABILITY_INFO = {
@@ -484,7 +511,7 @@ const fmtMod = m => (m>=0?"+":"")+m;
 </script>
 <script>
 /* =====================================================================
-   GAME DATA — RACES & BACKGROUNDS  (D&D 5e SRD 5.1)
+   GAME DATA — RACES & BACKGROUNDS  (SRD 5.1)
 ===================================================================== */
 const RACES = {
   "Dwarf (Hill)":{
@@ -645,7 +672,7 @@ const BACKGROUNDS = {
 
 <script>
 /* =====================================================================
-   GAME DATA — CLASSES  (D&D 5e SRD 5.1, level 1)
+   GAME DATA — CLASSES  (SRD 5.1, level 1)
 ===================================================================== */
 const ARMOR = {
   "None":            {desc:"AC 10 + Dex modifier", calc:(a)=>10+mod(a.dex)},
@@ -903,7 +930,7 @@ const CLASSES = {
 
 <script>
 /* =====================================================================
-   GAME DATA — SPELLS  (D&D 5e SRD 5.1; cantrips & 1st level)
+   GAME DATA — SPELLS  (SRD 5.1; cantrips & 1st level)
 ===================================================================== */
 const SPELLS = {
   /* --- Cantrips --- */
@@ -4951,7 +4978,10 @@ function renderSummary(){
       +'<div class="sheet-art">'+(S.art
         ?'<img src="'+S.art+'" alt="Character art">'
         :'<div style="color:#a89a70;font-style:italic;text-align:center">A half page awaits your hero\'s portrait —<br>add a JPG or PNG in Step VII</div>')+'</div>'
-      +'</div></div>';
+      +'</div>'
+      +'<div class="sheet-attribution">Generated with Forge of Heroes. Includes material from the System Reference Documents 5.1 and 5.2 by Wizards of the Coast LLC, licensed under CC BY 4.0. '
+      +'An independent fan tool, not affiliated with or endorsed by Wizards of the Coast LLC.</div>'
+      +'</div>';
   } else {
     sheet='<div class="rules-note">Choose at least a race and a class to see your character sheet.</div>';
   }
@@ -5051,7 +5081,7 @@ document.addEventListener("click",e=>{
   if(t.dataset.act==="art-pick"){ $("art-file").click(); return; }
   if(t.dataset.act==="print"){ window.print(); return; }
   if(t.dataset.act==="download"){
-    const data={meta:"Forge of Heroes — D&D 5e character (open-licensed rules)",
+    const data={meta:"Forge of Heroes — fifth-edition-compatible character (built on the open SRD)",
       level:S.level,character:S,finalScores:finalScores(),
       ac:computeAC(),hp:computeHP(),proficiencyBonus:profBonus(),
       spellSlots:pactSlots()||slotTable(),features:allFeatures(),feats:chosenFeats()};

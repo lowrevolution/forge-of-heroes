@@ -347,13 +347,51 @@
   ::-webkit-scrollbar-thumb:hover{background:var(--border-gold)}
 
   @media print{
-    body{background:#fff}
+    @page{margin:12mm}
+    /* Most sheet type is sized in rem, so shrinking the root shrinks the whole
+       sheet proportionally instead of each rule needing its own print size. */
+    html{font-size:11px}
+    body{background:#fff;color:#000;font-size:8.6pt;line-height:1.35}
+    #app{max-width:none;margin:0;padding:0}
     #app>*:not(#step-summary){display:none!important}
     #step-summary{display:block!important}
     #dice-toggle,#dice-tray,.step-footer,nav.steps,.no-print{display:none!important}
-    .sheet{box-shadow:none;border-color:#999}
+
+    .sheet{box-shadow:none;border:none;background:#fff;color:#000;padding:0;border-radius:0}
+    .sheet h2{font-size:15pt;padding-bottom:3px;margin-bottom:2px}
+    .sheet .id-line{font-size:8.4pt;margin:2px 0 8px}
+    .sheet-box h4{font-size:8.8pt;margin-bottom:4px;padding-bottom:2px}
+    .sheet-box{padding:6px 8px;background:none;border-width:1px}
+
+    /* A printed page is far narrower than a desktop window: two columns keeps
+       the text from being squeezed into unreadable slivers. */
+    .sheet-grid{grid-template-columns:1fr 1fr;gap:8px}
+    .sheet-stack{gap:8px}
+    .sheet-box.span2{grid-column:span 2}
+    /* Keep short boxes whole across a page break; Features is far too tall to
+       hold together, so let it flow and protect its individual entries. */
+    .sheet-box,.sheet-stack{break-inside:avoid;page-break-inside:avoid}
+    .sheet-box.span2{break-inside:auto;page-break-inside:auto}
+    .sheet-box li,.sheet .trait,.atk-line{break-inside:avoid;page-break-inside:avoid}
+
+    .sheet-abilities{gap:5px;margin:6px 0}
+    .sheet-ab{padding:4px 2px;background:none}
+    .sheet-ab .sa-mod{font-size:12pt}
+    .combat-row{gap:6px;margin:6px 0}
+    .combat-stat{padding:4px 9px;min-width:0;background:none}
+    .combat-stat .cs-val{font-size:11pt}
+    .sheet ul{padding-left:14px;font-size:8.4pt}
+    .sheet li{margin:1px 0}
+    .skill-line,.atk-line{font-size:8.2pt;padding:0}
+    .sheet .trait{margin:3px 0;padding-left:8px}
+
+    /* A half-page portrait, not a full page of it */
+    .sheet-art{min-height:0;padding:0;border:none;background:none}
+    .sheet-art img{max-height:95mm;width:auto}
   }
-  @media (max-width:640px){
+  /* screen-only: this block follows @media print, so without the `screen`
+     qualifier a narrow paper size would override the print grid */
+  @media screen and (max-width:640px){
     .sheet-abilities{grid-template-columns:repeat(3,1fr)}
     .panel{padding:18px 14px}
     /* below this width the grid is a single column, where a 2-column span

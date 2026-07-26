@@ -4173,8 +4173,8 @@ function autoSpells(){
 function renderAdvancement(){
   if(!S.klass){
     $("step-advancement").innerHTML='<div class="panel"><h2><span class="ornament">✦</span> Advancement</h2>'
-      +'<div class="rules-note">Choose a <b>class</b> first — everything about advancement flows from it.</div>'
-      +'<div class="step-footer"><button class="btn" data-goto="2">◂ Class</button><button class="btn gold" data-goto="4">Background ▸</button></div></div>';
+      +'<div class="rules-note">Choose a <b>base class</b> first — everything about advancement flows from it.</div>'
+      +'<div class="step-footer"><button class="btn" data-goto="2">◂ Base Class</button><button class="btn gold" data-goto="4">Background ▸</button></div></div>';
     return;
   }
   const c=CLASSES[S.klass], p=prog(), f=finalScores();
@@ -4223,7 +4223,7 @@ function renderAdvancement(){
         const lvls=Object.keys(sub.features).map(Number).sort((a,b)=>a-b);
         sd='<div class="detail-pane"><h3>'+S.subclass+'</h3><div class="flavor">'+sub.flavor+'</div>'
           +lvls.map(L=>drill((L<=S.level?"✦ ":"🔒 ")+"Level "+L+(L<=S.level?"":" — not yet reached"),
-              traitList(sub.features[L]), L<=S.level)).join('')
+              traitList(sub.features[L]), L<=S.level, "subfeat-L"+L)).join('')
           +'</div>';
       }
       subUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">'+si.label+'</h3>'
@@ -4280,7 +4280,7 @@ function renderAdvancement(){
   const featureUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Features Gained (levels 1–'+S.level+')</h3>'
     +Object.keys(byLevel).map(Number).sort((a,b)=>a-b).map(L=>
       drill("Level "+L+" <span class='lvl-tag'>"+byLevel[L].length+"</span>",
-        traitList(byLevel[L].map(ft=>({n:ft.n+" <i style='color:var(--ink-dim);font-weight:normal'>("+ft.src+")</i>",d:ft.d}))), L===S.level)).join('');
+        traitList(byLevel[L].map(ft=>({n:ft.n+" <i style='color:var(--ink-dim);font-weight:normal'>("+ft.src+")</i>",d:ft.d}))), L===S.level, "features-L"+L)).join('');
 
   /* --- spell slots --- */
   let slotUI="";
@@ -4299,9 +4299,9 @@ function renderAdvancement(){
 
   $("step-advancement").innerHTML=
     '<div class="panel"><h2><span class="ornament">✦</span> Advancement</h2>'
-    +'<p class="lede">Set your level and experience, then spend what your class grants along the way — hit points, a subclass, ability improvements, and feats.</p>'
-    +levelUI+hpUI+slotUI+subUI+asiUI+featureUI
-    +'<div class="step-footer"><button class="btn" data-goto="2">◂ Class</button><button class="btn gold" data-goto="4">Background ▸</button></div>'
+    +'<p class="lede">Set your level and experience, then spend everything your class grants along the way — hit points, a subclass, skill proficiencies, spell slots and spells, ability improvements, and feats.</p>'
+    +levelUI+hpUI+subUI+skillPickerUI()+slotUI+spellPickerUI()+asiUI+featureUI
+    +'<div class="step-footer"><button class="btn" data-goto="2">◂ Base Class</button><button class="btn gold" data-goto="4">Background ▸</button></div>'
     +'</div>';
 }
 </script>
@@ -4328,7 +4328,7 @@ const S = {
 const STEPS = [
   {id:"abilities",title:"I. Abilities"},
   {id:"race",title:"II. Race"},
-  {id:"class",title:"III. Class"},
+  {id:"class",title:"III. Base Class"},
   {id:"advancement",title:"IV. Advancement"},
   {id:"background",title:"V. Background"},
   {id:"equipment",title:"VI. Equipment"},
@@ -4402,9 +4402,22 @@ function computeAC(){
 /* ---------- html helpers ---------- */
 const $=id=>document.getElementById(id);
 function chips(arr){ return '<div class="stat-chips">'+arr.map(c=>'<span class="chip">'+c+'</span>').join('')+'</div>'; }
-function drill(title,body,open){
-  return '<details class="drill"'+(open?' open':'')+'><summary>'+title+'</summary><div class="drill-body">'+body+'</div></details>';
+/* Open/closed state of every drill-down, keyed by its title, so a re-render
+   does not slam shut the section the user is working in. */
+const DRILL_STATE={};
+function drillKey(title){ return String(title).replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim(); }
+function drill(title,body,open,key){
+  // an explicit key keeps the section identity stable when the summary text
+  // itself changes (e.g. a "2 of 5 chosen" counter)
+  const k=key||drillKey(title);
+  const isOpen=(k in DRILL_STATE)?DRILL_STATE[k]:!!open;
+  return '<details class="drill" data-drill="'+k.replace(/"/g,"&quot;")+'"'+(isOpen?' open':'')
+    +'><summary>'+title+'</summary><div class="drill-body">'+body+'</div></details>';
 }
+document.addEventListener("toggle",e=>{
+  const d=e.target;
+  if(d.tagName==="DETAILS" && d.dataset && d.dataset.drill) DRILL_STATE[d.dataset.drill]=d.open;
+},true);
 function traitList(traits){
   return traits.map(t=>'<div class="trait"><b>'+t.n+'.</b> <span class="t-desc">'+t.d+'</span></div>').join('');
 }
@@ -4524,73 +4537,88 @@ function renderClass(){
         +ch.options.map(o=>'<option'+(S.classChoices[ch.id]===o?' selected':'')+'>'+o+'</option>').join('')+'</select></div>').join('');
     }
 
-    /* skill picker */
-    const granted=grantedSkills(), budget=skillBudget();
-    const fromClass=S.skills.filter(s=>c.skills.from.includes(s)).length;
-    const fromAny=S.skills.length-fromClass;
-    const skillItems=Object.keys(SKILLS).map(sk=>{
-      const inClass=c.skills.from.includes(sk);
-      const isGranted=granted.has(sk);
-      const picked=S.skills.includes(sk);
-      const selectable=inClass || budget.anyCount>0;
-      if(!selectable && !isGranted) return "";
-      return '<label class="pick-item'+(picked?' picked':'')+(isGranted?' locked':'')+'">'
-        +'<input type="checkbox" data-skill="'+sk+'"'+(picked?' checked':'')+(isGranted?' disabled checked':'')+'>'
-        +'<span><span class="pi-name">'+sk+'</span><span class="pi-sub">'+ABILITY_INFO[SKILLS[sk]].name+(isGranted?' · already granted':inClass?'':' · via Skill Versatility')+'</span></span></label>';
-    }).join('');
-    const skillUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">Skill Proficiencies</h3>'
-      +'<div class="pick-counter">Choose <b>'+budget.classCount+'</b> class skills'+(budget.anyCount?' + <b>'+budget.anyCount+'</b> any skills (Half-Elf Skill Versatility)':'')
-      +' — picked <b>'+fromClass+'</b>/'+budget.classCount+(budget.anyCount?' and <b>'+fromAny+'</b>/'+budget.anyCount:'')+'. Skills granted by race or background are locked in.</div>'
-      +'<div class="pick-list">'+skillItems+'</div>';
-
-    /* spell picker */
-    let spellUI="";
-    if(c.spellcasting){
-      const sc=c.spellcasting, list=CLASS_SPELLS[sc.listKey]||{cantrips:[],level1:[]};
-      const budget=spellBudget(), cantripMax=cantripsKnownAt(), auto=autoSpells();
-      const mkItems=(names,group,picked)=>names.map(sp=>{
-        const s=SPELLS[sp]; if(!s) return "";
-        const isAuto=group==="spells1"&&auto.includes(sp);
-        const isPicked=picked.includes(sp)||isAuto;
-        return '<label class="pick-item'+(isPicked?' picked':'')+(isAuto?' locked':'')+'">'
-          +'<input type="checkbox" data-spell="'+group+'" data-name="'+sp+'"'+(isPicked?' checked':'')+(isAuto?' disabled':'')+'>'
-          +'<span><span class="pi-name">'+sp+'</span><span class="pi-sub">'+s.school+(isAuto?' · always prepared (domain)':'')
-          +(SPELL_META[sp]?' · '+SPELL_META[sp][0]+' · '+SPELL_META[sp][1]+' · '+SPELL_META[sp][2]+' · '+SPELL_META[sp][3]:'')
-          +' — '+s.d+'</span></span></label>';
-      }).join('');
-      const verb = sc.mode==="prepared" ? "prepare" : sc.mode==="book" ? "record in your spellbook" : "know";
-      const modeNote = sc.mode==="prepared" ? (sc.prepNote||"")+" At level "+S.level+" you prepare <b>"+budget+"</b> spells."
-        : sc.mode==="book" ? "Your spellbook holds <b>"+budget+"</b> spells at level "+S.level+" (six at 1st level, two more each level after)."
-        : "You know <b>"+budget+"</b> spells at level "+S.level+", chosen permanently.";
-      const byLvl=spellsByLevel();
-      const maxL=maxSpellLevel();
-      const ordinal=n=>n+(["th","st","nd","rd"][n%100>>3^1&&n%10]||"th");
-      const levelBlocks=Object.keys(byLvl).map(Number).sort((a,b)=>a-b).map(L=>
-        drill(ordinal(L)+'-Level Spells <span class="lvl-tag">'+byLvl[L].length+' available</span>',
-          '<div class="pick-list spell-block">'+mkItems(byLvl[L],"spells1",S.spells1)+'</div>', L===1)
-      ).join('');
-      spellUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">Spellcasting ('+ABILITY_INFO[sc.ability].name+')</h3>'
-        +'<div class="rules-note">'+modeNote+' Spell save DC = 8 + '+profBonus()+' + '+ABILITY_INFO[sc.ability].name.slice(0,3)+' mod'
-        +(maxL?'. You can cast spells up to <b>level '+maxL+'</b>':'')+'.</div>'
-        +'<div class="pick-counter">Cantrips <b>'+S.cantrips.length+'</b>/'+cantripMax
-        +' · Spells you '+verb+' <b>'+S.spells1.length+'</b>/'+budget+'</div>'
-        +(cantripMax?drill('Cantrips <span class="lvl-tag">choose '+cantripMax+'</span>','<div class="pick-list spell-block">'+mkItems(list.cantrips||[],"cantrips",S.cantrips)+'</div>', true):"")
-        +(levelBlocks||'<div class="rules-note">No spell slots yet at this level.</div>');
-    }
-
+    const si=SUBCLASSES[S.klass];
     detail='<div class="detail-pane"><h3>'+S.klass+'</h3><div class="flavor">'+c.flavor+'</div>'
       +chips(['<b>Hit Die:</b> d'+c.hitDie,'<b>Primary:</b> '+c.primary,'<b>Saving Throws:</b> '+c.saves.map(s=>ABILITY_INFO[s].name).join(", "),'<b>Armor:</b> '+c.armorProf,'<b>Weapons:</b> '+c.weaponProf,'<b>Tools:</b> '+c.toolProf])
       +choiceUI
       +drill("Level 1 Class Features — full details", traitList(c.features), true)
-      +skillUI+spellUI+'</div>';
+      +'<div class="rules-note" style="margin-top:12px">Next, in <b>Advancement</b>, you will set your level and choose your '
+      +(si?si.label.toLowerCase():"subclass")+', skill proficiencies'
+      +(c.spellcasting?", spell slots and spells":"")+'.</div>'
+      +'</div>';
   }
 
   $("step-class").innerHTML=
-    '<div class="panel"><h2><span class="ornament">⚜</span> Choose Your Class</h2>'
+    '<div class="panel"><h2><span class="ornament">⚜</span> Choose Your Base Class</h2>'
     +'<p class="lede">Your class is your calling — it shapes how you fight, what you master, and whether magic answers when you call. Twelve core classes and ten from the wider open canon await.</p>'
     +'<div class="card-grid">'+cards+'</div>'+detail
     +'<div class="step-footer"><button class="btn" data-goto="1">◂ Race</button><button class="btn gold" data-goto="3">Advancement ▸</button></div>'
     +'</div>';
+}
+
+/* ---------- shared pickers, used by the Advancement step ---------- */
+function skillPickerUI(){
+  const c=CLASSES[S.klass];
+  const granted=grantedSkills(), budget=skillBudget();
+  const fromClass=S.skills.filter(s=>c.skills.from.includes(s)).length;
+  const fromAny=S.skills.length-fromClass;
+  const classFull=fromClass>=budget.classCount, anyFull=fromAny>=budget.anyCount;
+  const skillItems=Object.keys(SKILLS).map(sk=>{
+    const inClass=c.skills.from.includes(sk);
+    const isGranted=granted.has(sk);
+    const picked=S.skills.includes(sk);
+    const selectable=inClass || budget.anyCount>0;
+    if(!selectable && !isGranted) return "";
+    // once every allowance is spent, unpicked skills are visibly locked rather than silently inert
+    const full=!picked && !isGranted && (inClass ? (classFull&&anyFull) : anyFull);
+    return '<label class="pick-item'+(picked?' picked':'')+((isGranted||full)?' locked':'')+'">'
+      +'<input type="checkbox" data-skill="'+sk+'"'+(picked?' checked':'')+(isGranted?' disabled checked':(full?' disabled':''))+'>'
+      +'<span><span class="pi-name">'+sk+'</span><span class="pi-sub">'+ABILITY_INFO[SKILLS[sk]].name
+      +(isGranted?' · already granted':inClass?'':' · via Skill Versatility')+(full?' · no picks left':'')+'</span></span></label>';
+  }).join('');
+  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Skill Proficiencies</h3>'
+    +'<div class="pick-counter">Choose <b>'+budget.classCount+'</b> class skills'+(budget.anyCount?' + <b>'+budget.anyCount+'</b> any skills (Half-Elf Skill Versatility)':'')
+    +' — picked <b>'+fromClass+'</b>/'+budget.classCount+(budget.anyCount?' and <b>'+fromAny+'</b>/'+budget.anyCount:'')+'. Skills granted by race or background are locked in.</div>'
+    +'<div class="pick-list">'+skillItems+'</div>';
+}
+
+function spellPickerUI(){
+  const c=CLASSES[S.klass], sc=c.spellcasting;
+  if(!sc) return "";
+  const list=CLASS_SPELLS[sc.listKey]||{cantrips:[],level1:[]};
+  const budget=spellBudget(), cantripMax=cantripsKnownAt(), auto=autoSpells();
+  const spellsFull=S.spells1.length>=budget, cantripsFull=S.cantrips.length>=cantripMax;
+  const mkItems=(names,group,picked)=>names.map(sp=>{
+    const s=SPELLS[sp]; if(!s) return "";
+    const isAuto=group==="spells1"&&auto.includes(sp);
+    const isPicked=picked.includes(sp)||isAuto;
+    const full=!isPicked&&(group==="cantrips"?cantripsFull:spellsFull);
+    return '<label class="pick-item'+(isPicked?' picked':'')+((isAuto||full)?' locked':'')+'">'
+      +'<input type="checkbox" data-spell="'+group+'" data-name="'+sp+'"'+(isPicked?' checked':'')+((isAuto||full)?' disabled':'')+'>'
+      +'<span><span class="pi-name">'+sp+'</span><span class="pi-sub">'+s.school+(isAuto?' · always prepared (domain)':'')
+      +(SPELL_META[sp]?' · '+SPELL_META[sp][0]+' · '+SPELL_META[sp][1]+' · '+SPELL_META[sp][2]+' · '+SPELL_META[sp][3]:'')
+      +' — '+s.d+'</span></span></label>';
+  }).join('');
+  const verb = sc.mode==="prepared" ? "prepare" : sc.mode==="book" ? "record in your spellbook" : "know";
+  const modeNote = sc.mode==="prepared" ? (sc.prepNote||"")+" At level "+S.level+" you prepare <b>"+budget+"</b> spells."
+    : sc.mode==="book" ? "Your spellbook holds <b>"+budget+"</b> spells at level "+S.level+" (six at 1st level, two more each level after)."
+    : "You know <b>"+budget+"</b> spells at level "+S.level+", chosen permanently.";
+  const byLvl=spellsByLevel(), maxL=maxSpellLevel();
+  const ordinal=n=>n+(["th","st","nd","rd"][n%100>>3^1&&n%10]||"th");
+  const counts={};
+  S.spells1.forEach(n=>{ const l=(SPELLS[n]||{}).lvl; if(l) counts[l]=(counts[l]||0)+1; });
+  const levelBlocks=Object.keys(byLvl).map(Number).sort((a,b)=>a-b).map(L=>
+    drill(ordinal(L)+'-Level Spells <span class="lvl-tag">'+(counts[L]||0)+' of '+byLvl[L].length+' chosen</span>',
+      '<div class="pick-list spell-block">'+mkItems(byLvl[L],"spells1",S.spells1)+'</div>', L===1, "spells-L"+L)
+  ).join('');
+  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Spells ('+ABILITY_INFO[sc.ability].name+')</h3>'
+    +'<div class="rules-note">'+modeNote+' Spell save DC = 8 + '+profBonus()+' + '+ABILITY_INFO[sc.ability].name.slice(0,3)+' mod'
+    +(maxL?'. You can cast spells up to <b>level '+maxL+'</b>':'')+'.</div>'
+    +'<div class="pick-counter">Cantrips <b>'+S.cantrips.length+'</b>/'+cantripMax
+    +' · Spells you '+verb+' <b>'+S.spells1.length+'</b>/'+budget
+    +(spellsFull?' <span style="color:var(--blood-bright)">— all spent; clear one to choose another</span>':'')+'</div>'
+    +(cantripMax?drill('Cantrips <span class="lvl-tag">'+S.cantrips.length+' of '+cantripMax+' chosen</span>','<div class="pick-list spell-block">'+mkItems(list.cantrips||[],"cantrips",S.cantrips)+'</div>', true, "spells-cantrips"):"")
+    +(levelBlocks||'<div class="rules-note">No spell slots yet at this level.</div>');
 }
 
 /* ---------- Step 4: Background ---------- */
@@ -4756,11 +4784,11 @@ function renderSummary(){
   if(!S.klass) missing.push("No class chosen (Step III).");
   if(S.klass){
     const b=skillBudget(), fromClass=S.skills.filter(s=>CLASSES[S.klass].skills.from.includes(s)).length;
-    if(fromClass<b.classCount) missing.push("Class skill picks incomplete (Step III).");
+    if(fromClass<b.classCount) missing.push("Class skill picks incomplete (Step IV).");
     const sc=CLASSES[S.klass].spellcasting;
     if(sc){
-      if(S.cantrips.length<cantripsKnownAt()) missing.push("Cantrip picks incomplete (Step III).");
-      if(S.spells1.length<spellBudget()) missing.push("Spell picks incomplete — "+S.spells1.length+" of "+spellBudget()+" (Step III).");
+      if(S.cantrips.length<cantripsKnownAt()) missing.push("Cantrip picks incomplete (Step IV).");
+      if(S.spells1.length<spellBudget()) missing.push("Spell picks incomplete — "+S.spells1.length+" of "+spellBudget()+" (Step IV).");
     }
     if(subclassUnlocked() && subclassInfo() && !S.subclass)
       missing.push("No "+subclassInfo().label+" chosen (Step IV).");
@@ -4896,9 +4924,12 @@ function renderSummary(){
 ===================================================================== */
 const RENDERERS=[renderAbilities,renderRace,renderClass,renderAdvancement,renderBackground,renderEquipment,renderDetails,renderSummary];
 function render(){
+  const y=window.scrollY;
   renderNav();
   RENDERERS[S.step]();
   save();
+  // re-rendering replaces the DOM wholesale; keep the reader where they were
+  if(y) window.scrollTo(0,y);
 }
 function save(){ try{ localStorage.setItem("forge-of-heroes", JSON.stringify(S)); }catch(e){} }
 function load(){

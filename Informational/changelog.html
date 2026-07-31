@@ -174,10 +174,28 @@
 
 <section class="week">
   <h2>Week 2 &middot; Jul 27 &ndash; Aug 2, 2026</h2>
-  <p class="week-sum">The forge learns to make heroes with more than one calling. Multiclassing arrives whole: a class ledger with prerequisite-gated cards, spell slots that pool across classes by the real rules while pact magic stands apart, hit dice that remember which class rolled them, and a character sheet that reads "Fighter 5 / Wizard 3" like it always could. Heroes saved before any of this existed load untouched.</p>
+  <p class="week-sum">The forge learns to make heroes with more than one calling. Multiclassing arrives whole: a class ledger with prerequisite-gated cards, spell slots that pool across classes by the real rules while pact magic stands apart, hit dice that remember which class rolled them, and a character sheet that reads "Fighter 5 / Wizard 3" like it always could. Heroes saved before any of this existed load untouched. The starting kit stops speaking in categories, too: where the book says "any martial weapon", you now say which one.</p>
 
   <div class="day">
     <h3>Friday, July 31 — day two</h3>
+
+    <div class="entry">
+      <span class="hash">898a145</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>&ldquo;Any martial weapon&rdquo; finally lets you say which one</strong>
+        <p>Half the starting kits in the book hand you a category rather than an
+        item — any martial weapon, two simple melee weapons, an arcane focus, a
+        musical instrument, a set of artisan's tools — and the forge had no way to
+        answer. It picked a longsword on your behalf, labelled it an example, and
+        left it there; a fighter who wanted a greatsword simply could not have one.
+        Every such slot now comes with its own dropdown, listing exactly the weapons
+        that qualify with their damage dice on the label, and two-weapon options get
+        two dropdowns so you can take a glaive in one hand's worth of choice and a
+        longsword in the other. What you pick is written back into the kit list, the
+        character sheet and the attack table, so the greatsword rolls its own 2d6
+        rather than the longsword's d8. Anything still unchosen is called out in the
+        step and in the sheet's list of unfinished business, and changing the option
+        a slot came from forgets the pick that no longer applies.</p></span>
+    </div>
 
     <div class="entry">
       <span class="hash">c33d95d</span><span class="tag fix">FIX</span>
@@ -331,16 +349,16 @@
 // STATS:BEGIN -- rewritten in place by update_stats.ps1; do not edit by hand
 window.DEVLOG_STATS = {
   "generated": "Jul 31, 2026",
-  "commits": 11,
+  "commits": 13,
   "devDays": 2,
-  "appLoc": 5503,
+  "appLoc": 5643,
   "classes": 22,
   "races": 19,
   "spells": 139,
   "feats": 35,
   "commitsByWeek": [
   { "label": "Wk Jul 20", "commits": 8 },
-  { "label": "Wk Jul 27", "commits": 3 }
+  { "label": "Wk Jul 27", "commits": 5 }
   ]
 };
 // STATS:END

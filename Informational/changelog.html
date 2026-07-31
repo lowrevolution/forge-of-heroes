@@ -180,6 +180,18 @@
     <h3>Friday, July 31 — day two</h3>
 
     <div class="entry">
+      <span class="hash">c33d95d</span><span class="tag fix">FIX</span>
+      <span class="what"><strong>Dice answer to a finger, not just a mouse</strong>
+        <p>Dragging a rolled die onto an ability worked beautifully on desktop and
+        did nothing at all on a phone — the drag machinery browsers give you only
+        listens to mice, and a touch never fires any of it. A finger drag now lifts a
+        ghost of the die that follows the touch, lights up the ability box under it,
+        and drops with exactly the same assign-and-swap rules as the mouse. The dice
+        also claim their own touch gesture, so the page no longer scrolls out from
+        under a drag.</p></span>
+    </div>
+
+    <div class="entry">
       <span class="hash">&mdash;</span><span class="tag tooling">TOOLING</span>
       <span class="what"><strong>This devlog</strong>
         <p>The page you are reading, plus the stats panel above it. One self-contained
@@ -319,16 +331,16 @@
 // STATS:BEGIN -- rewritten in place by update_stats.ps1; do not edit by hand
 window.DEVLOG_STATS = {
   "generated": "Jul 31, 2026",
-  "commits": 9,
+  "commits": 11,
   "devDays": 2,
-  "appLoc": 5446,
+  "appLoc": 5503,
   "classes": 22,
   "races": 19,
   "spells": 139,
   "feats": 35,
   "commitsByWeek": [
   { "label": "Wk Jul 20", "commits": 8 },
-  { "label": "Wk Jul 27", "commits": 1 }
+  { "label": "Wk Jul 27", "commits": 3 }
   ]
 };
 // STATS:END

@@ -225,6 +225,16 @@
   .pick-item .pi-sub{color:var(--ink-dim);font-size:.8rem;display:block}
   .pick-counter{font-size:.95rem;color:var(--ink-dim);margin:6px 0}
   .pick-counter b{color:var(--gold-bright)}
+  /* follow-up pickers for "any martial weapon" style equipment options */
+  .equip-picks{display:flex;flex-wrap:wrap;gap:10px;margin:2px 0 10px 2px}
+  .equip-pick{display:flex;align-items:center;gap:7px;font-size:.88rem;color:var(--ink-dim)}
+  .equip-pick .ep-label{font-variant:small-caps;color:var(--gold)}
+  .equip-pick select{
+    background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;
+    padding:5px;font-family:var(--serif);max-width:100%;
+  }
+  .equip-pick .ep-warn{color:var(--blood-bright);font-size:.78rem}
+  li .equip-picks{margin:4px 0 8px 0}
   .spell-block summary .lvl-tag{
     font-size:.72rem;background:rgba(127,107,209,.2);border:1px solid var(--arcane);color:#cfc4ff;
     padding:1px 8px;border-radius:10px;margin-left:6px;
@@ -1080,19 +1090,116 @@ const WEAPONS = {
   "Longbow":{dmg:"1d8",type:"piercing",props:"Martial, ammunition 150/600, heavy, two-handed",ranged:true,two:true},
   "Unarmed strike":{dmg:"1",type:"bludgeoning",props:"Melee, always available"}
 };
-/* Phrases in equipment text that stand for a weapon of the player's choice */
+/* Phrases in equipment text that stand for a weapon of the player's choice —
+   used as a placeholder on the sheet until the specific item is picked */
 const GENERIC_WEAPONS = [
   ["any martial melee weapon","Longsword"],
   ["two martial weapons","Longsword"],
   ["martial weapon and shield","Longsword"],
+  ["martial weapon and a shield","Longsword"],
+  ["martial weapon","Longsword"],
   ["any simple melee weapon","Mace"],
   ["two simple melee weapons","Spear"],
   ["any simple weapon","Spear"]
 ];
+
+/* ---------- open-ended equipment slots ----------
+   Class kit entries such as "Any martial melee weapon" or "One set of
+   artisan's tools of your choice" name a category, not an item. Each entry
+   below matches such a phrase, says how many items it grants, and which list
+   they come from; the player picks the specifics in Step VI and the choice is
+   substituted back into the equipment text everywhere it is shown. */
+const INSTRUMENTS = ["Bagpipes","Drum","Dulcimer","Flute","Horn","Lute","Lyre","Pan flute","Shawm","Viol"];
+const ARCANE_FOCI = ["Crystal","Orb","Rod","Staff","Wand"];
+const ARTISAN_TOOLS = ["Alchemist's supplies","Brewer's supplies","Calligrapher's supplies",
+  "Carpenter's tools","Cartographer's tools","Cobbler's tools","Cook's utensils","Glassblower's tools",
+  "Jeweler's tools","Leatherworker's tools","Mason's tools","Painter's supplies","Potter's tools",
+  "Smith's tools","Tinker's tools","Weaver's tools","Woodcarver's tools"];
+/* Order matters: the two-weapon and "melee" phrasings must be tested before
+   their shorter cousins, or "two martial weapons" would match "martial weapon". */
+const EQUIP_SLOTS = [
+  {re:/(?:any\s+)?two\s+martial\s+weapons/i,               n:2, cat:"martial",     label:"Martial weapon"},
+  {re:/(?:any\s+|a\s+|one\s+)?martial\s+melee\s+weapon/i,  n:1, cat:"martialMelee", label:"Martial melee weapon"},
+  {re:/(?:any\s+|a\s+|one\s+)?martial\s+weapon/i,          n:1, cat:"martial",     label:"Martial weapon"},
+  {re:/(?:any\s+)?two\s+simple\s+melee\s+weapons/i,        n:2, cat:"simpleMelee", label:"Simple melee weapon"},
+  {re:/(?:any\s+)?two\s+simple\s+weapons/i,                n:2, cat:"simple",      label:"Simple weapon"},
+  {re:/(?:any\s+|a\s+|one\s+)?simple\s+melee\s+weapon/i,   n:1, cat:"simpleMelee", label:"Simple melee weapon"},
+  {re:/(?:any\s+|a\s+|one\s+)?simple\s+weapon/i,           n:1, cat:"simple",      label:"Simple weapon"},
+  {re:/(?:any\s+other\s+|any\s+|a\s+)?(?:other\s+)?musical\s+instrument/i, n:1, cat:"instrument", label:"Instrument"},
+  {re:/(?:an\s+|any\s+)?arcane\s+focus/i,                  n:1, cat:"focus",       label:"Arcane focus",
+   fmt:p=>p+" (arcane focus)"},
+  {re:/(?:one\s+set\s+of\s+)?artisan'?s\s+tools(?:\s+of\s+your\s+choice)?/i, n:1, cat:"artisan", label:"Artisan's tools"}
+];
+function equipSlotSpec(text){
+  for(const s of EQUIP_SLOTS) if(s.re.test(text)) return s;
+  return null;
+}
+/* Storage keys for one entry's picks — "g:<group>" for a chosen option,
+   "f:<index>" for a line of the fixed kit. */
+function equipPickKeys(key,spec){ return Array.from({length:spec.n},(_,i)=>key+"|"+i); }
+function weaponsInCategory(cat){
+  return Object.keys(WEAPONS).filter(n=>{
+    if(n==="Unarmed strike") return false;
+    const w=WEAPONS[n], martial=/Martial/.test(w.props), simple=/Simple/.test(w.props);
+    if(cat==="martial") return martial;
+    if(cat==="martialMelee") return martial && !w.ranged;
+    if(cat==="simple") return simple;
+    if(cat==="simpleMelee") return simple && !w.ranged;
+    return false;
+  });
+}
+function weaponOptionLabel(n){
+  const w=WEAPONS[n], extra=w.props.replace(/^(?:Martial|Simple),?\s*/i,"");
+  return n+" — "+w.dmg+" "+w.type+(extra?", "+extra:"");
+}
+function equipSlotOptions(cat){
+  const plain=list=>list.map(n=>({value:n,label:n}));
+  if(cat==="instrument") return plain(INSTRUMENTS);
+  if(cat==="focus") return plain(ARCANE_FOCI);
+  if(cat==="artisan") return plain(ARTISAN_TOOLS);
+  return weaponsInCategory(cat).map(n=>({value:n,label:weaponOptionLabel(n)}));
+}
+/* The equipment line with its category phrase swapped for the picked items;
+   an unfinished pick leaves the original wording in place. */
+function resolveEquipText(key,text){
+  const spec=equipSlotSpec(text);
+  if(!spec) return text;
+  const picks=equipPickKeys(key,spec).map(k=>S.equipPicks[k]).filter(Boolean);
+  if(picks.length<spec.n) return text;
+  const fmt=spec.fmt||(p=>p);
+  return text.replace(spec.re, picks.map(fmt).join(" and "));
+}
+/* Every line of the starting kit, choices resolved. group is the choice's
+   heading, or null for gear the class always carries. */
+function equipLines(){
+  if(!S.klass) return [];
+  const c=CLASSES[S.klass], out=[];
+  c.equipChoices.forEach(g=>{
+    const o=S.equip[g.label];
+    if(o) out.push({text:resolveEquipText("g:"+g.label,o), group:g.label});
+  });
+  c.fixedEquip.forEach((e,i)=>out.push({text:resolveEquipText("f:"+i,e), group:null}));
+  return out;
+}
+/* Human-readable list of category slots still awaiting a specific item */
+function pendingEquipPicks(){
+  if(!S.klass) return [];
+  const c=CLASSES[S.klass], out=[];
+  const scan=(key,text)=>{
+    const spec=equipSlotSpec(text);
+    if(!spec) return;
+    equipPickKeys(key,spec).forEach((k,i)=>{
+      if(!S.equipPicks[k]) out.push(spec.label+(spec.n>1?" "+(i+1):"")+" — from “"+text+"”");
+    });
+  };
+  c.equipChoices.forEach(g=>{ const o=S.equip[g.label]; if(o) scan("g:"+g.label,o); });
+  c.fixedEquip.forEach((e,i)=>scan("f:"+i,e));
+  return out;
+}
+
 function characterWeapons(){
   if(!S.klass) return [];
-  const c=CLASSES[S.klass];
-  const sources=[...Object.values(S.equip),...c.fixedEquip];
+  const sources=equipLines().map(e=>e.text);
   const found=new Map();
   for(const raw of sources){
     const src=raw.toLowerCase();
@@ -4597,7 +4704,7 @@ const S = {
   // additional classes beyond the first; the starting class keeps the fields above
   multi:[],   // [{name, level, subclass, skills:[], cantrips:[], spells:[], asiPicks:{}, hpRolls:[]}]
   background:null,
-  equip:{}, armor:null, shield:false, items:[],
+  equip:{}, equipPicks:{}, armor:null, shield:false, items:[],
   name:"", alignment:"", persona:{traits:"",ideals:"",bonds:"",flaws:""}
 };
 
@@ -4706,7 +4813,7 @@ function traitList(traits){
 function renderNav(){
   const doneFlags=[abilitiesDone(), !!S.race, !!S.klass,
     !!(S.klass&&classEntries().every(en=>!subclassUnlockedOf(en)||en.subclass)), !!S.background,
-    !!(S.klass&&Object.keys(S.equip).length), !!(S.name&&S.alignment), false];
+    !!(S.klass&&Object.keys(S.equip).length&&!pendingEquipPicks().length), !!(S.name&&S.alignment), false];
   $("step-nav").innerHTML=STEPS.map((st,i)=>
     '<button data-goto="'+i+'" class="'+(i===S.step?'active':'')+(doneFlags[i]?' done':'')+'">'+st.title+'</button>'
   ).join('');
@@ -4951,6 +5058,20 @@ function renderBackground(){
 }
 
 /* ---------- Step 5: Equipment ---------- */
+/* A dropdown per open-ended slot in an equipment line ("any martial weapon"),
+   so the kit resolves to real items with real damage dice. */
+function equipPickUI(key,text){
+  const spec=equipSlotSpec(text);
+  if(!spec) return "";
+  const options=equipSlotOptions(spec.cat);
+  return '<div class="equip-picks">'+equipPickKeys(key,spec).map((k,i)=>{
+    const cur=S.equipPicks[k]||"";
+    return '<label class="equip-pick"><span class="ep-label">'+spec.label+(spec.n>1?" "+(i+1):"")+'</span>'
+      +'<select data-equip-pick="'+k+'"><option value="">— choose —</option>'
+      +options.map(o=>'<option value="'+o.value+'"'+(cur===o.value?' selected':'')+'>'+o.label+'</option>').join('')
+      +'</select>'+(cur?'':'<span class="ep-warn">not yet chosen</span>')+'</label>';
+  }).join('')+'</div>';
+}
 function renderEquipment(){
   let body="";
   if(!S.klass){
@@ -4958,12 +5079,18 @@ function renderEquipment(){
   } else {
     const c=CLASSES[S.klass];
     body=c.equipChoices.map((g,gi)=>{
+      const chosen=S.equip[g.label];
       return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:12px">'+g.label+'</h3><div class="pick-list">'
-        +g.options.map(o=>'<label class="pick-item'+(S.equip[g.label]===o.name?' picked':'')+'">'
-          +'<input type="radio" name="eq'+gi+'" data-equip-group="'+g.label+'" data-equip-opt="'+o.name+'"'+(S.equip[g.label]===o.name?' checked':'')+'>'
-          +'<span><span class="pi-name">'+o.name+'</span><span class="pi-sub">'+o.detail+'</span></span></label>').join('')+'</div>';
+        +g.options.map(o=>'<label class="pick-item'+(chosen===o.name?' picked':'')+'">'
+          +'<input type="radio" name="eq'+gi+'" data-equip-group="'+g.label+'" data-equip-opt="'+o.name+'"'+(chosen===o.name?' checked':'')+'>'
+          +'<span><span class="pi-name">'+o.name+'</span><span class="pi-sub">'+o.detail+'</span></span></label>').join('')+'</div>'
+        +(chosen?equipPickUI("g:"+g.label,chosen):"");
     }).join('');
-    if(c.fixedEquip.length) body+='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:12px">Also carried</h3><ul style="padding-left:20px;color:var(--ink-dim)">'+c.fixedEquip.map(e=>'<li>'+e+'</li>').join('')+'</ul>';
+    const pending=pendingEquipPicks();
+    if(pending.length) body+='<div class="rules-note" style="margin-top:10px;border-color:var(--blood-bright)">'
+      +'<b>Still to specify:</b> your kit grants a choice of item — '+pending.map(p=>p.split(" — ")[0].toLowerCase()).join(", ")+'.</div>';
+    if(c.fixedEquip.length) body+='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:12px">Also carried</h3><ul style="padding-left:20px;color:var(--ink-dim)">'
+      +c.fixedEquip.map((e,i)=>'<li>'+resolveEquipText("f:"+i,e)+equipPickUI("f:"+i,e)+'</li>').join('')+'</ul>';
     if(S.background) body+='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:12px">From your '+S.background+' background</h3><ul style="padding-left:20px;color:var(--ink-dim)">'+BACKGROUNDS[S.background].equipment.map(e=>'<li>'+e+'</li>').join('')+'</ul>';
 
     body+='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:16px">Magic Items</h3>'
@@ -5114,6 +5241,7 @@ function renderSummary(){
     });
   }
   if(!S.background) missing.push("No background chosen (Step V).");
+  pendingEquipPicks().forEach(p=>missing.push("Equipment choice not specified: "+p+" (Step VI)."));
   if(!S.name) missing.push("Your hero has no name (Step VII).");
   if(!S.alignment) missing.push("No alignment chosen (Step VII).");
 
@@ -5144,8 +5272,10 @@ function renderSummary(){
     Object.entries(S.raceChoices).forEach(([k,v])=>{ if(v) feats.push(["Choice — "+k,v]); });
 
     const equipList=[];
-    Object.entries(S.equip).forEach(([g,o])=>equipList.push(o+" ("+g+")"));
-    c.fixedEquip.forEach(e=>equipList.push(e));
+    equipLines().forEach(e=>{
+      const tag=e.group && e.text.toLowerCase().indexOf(e.group.toLowerCase())<0 ? " ("+e.group+")" : "";
+      equipList.push(e.text+tag);
+    });
     if(S.background) BACKGROUNDS[S.background].equipment.forEach(e=>equipList.push(e));
     S.items.forEach(i=>equipList.push("<b>"+i+"</b>"+(MAGIC_ITEMS[i]?" <small>("+MAGIC_ITEMS[i].rarity+(MAGIC_ITEMS[i].attune?", attuned":"")+")</small>":"")));
 
@@ -5277,6 +5407,7 @@ function load(){
       if(!d.hpRolls) d.hpRolls=[];
       if(!d.hpMode) d.hpMode="average";
       if(!d.items) d.items=[];
+      if(!d.equipPicks) d.equipPicks={};
       if(d.subclass===undefined) d.subclass=null;
       // migrate single-class saves and sanitize multiclass entries
       if(!Array.isArray(d.multi)) d.multi=[];
@@ -5303,7 +5434,7 @@ document.addEventListener("click",e=>{
   if(t.dataset.pickClass!==undefined){
     if(S.klass!==t.dataset.pickClass){
       S.classChoices={}; S.skills=[]; S.cantrips=[]; S.spells1=[];
-      S.equip={}; S.armor=null; S.shield=false;
+      S.equip={}; S.equipPicks={}; S.armor=null; S.shield=false;
       S.subclass=null; S.asiPicks={}; S.hpRolls=[];
       S.multi=[];
     }
@@ -5415,6 +5546,11 @@ document.addEventListener("change",e=>{
   if(t.dataset.halfelf!==undefined){ S.halfElf[+t.dataset.halfelf]=t.value; render(); return; }
   if(t.dataset.racechoice){ S.raceChoices[t.dataset.racechoice]=t.value; render(); return; }
   if(t.dataset.classchoice){ S.classChoices[t.dataset.classchoice]=t.value; render(); return; }
+  if(t.dataset.equipPick!==undefined){
+    if(t.value) S.equipPicks[t.dataset.equipPick]=t.value;
+    else delete S.equipPicks[t.dataset.equipPick];
+    render(); return;
+  }
   if(t.dataset.skill){
     const sk=t.dataset.skill, c=CLASSES[S.klass], b=skillBudget();
     if(t.checked){
@@ -5468,7 +5604,13 @@ document.addEventListener("change",e=>{
     else S.items=S.items.filter(x=>x!==it);
     render(); return;
   }
-  if(t.dataset.equipGroup){ S.equip[t.dataset.equipGroup]=t.dataset.equipOpt; render(); return; }
+  if(t.dataset.equipGroup){
+    const g=t.dataset.equipGroup;
+    // switching options invalidates any item picked for the old one
+    if(S.equip[g]!==t.dataset.equipOpt)
+      Object.keys(S.equipPicks).forEach(k=>{ if(k.indexOf("g:"+g+"|")===0) delete S.equipPicks[k]; });
+    S.equip[g]=t.dataset.equipOpt; render(); return;
+  }
   if(t.dataset.armor){ S.armor=t.dataset.armor; render(); return; }
   if(t.dataset.shield!==undefined){ S.shield=t.checked; render(); return; }
   if(t.dataset.persona){ S.persona[t.dataset.persona]=t.value; save(); return; }

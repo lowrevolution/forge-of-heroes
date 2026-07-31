@@ -1181,6 +1181,13 @@ function equipLines(){
   c.fixedEquip.forEach((e,i)=>out.push({text:resolveEquipText("f:"+i,e), group:null}));
   return out;
 }
+/* A kit line that hands you a shield — "Martial weapon and shield", the
+   cleric's fixed shield, the druid's wooden one. Shields are tracked by the
+   Armor Worn checkbox rather than as an item, so the two are kept in step. */
+function mentionsShield(text){ return /\bshields?\b/i.test(text); }
+function equipGrantsShield(){
+  return !!S.klass && CLASSES[S.klass].shieldAllowed && equipLines().some(e=>mentionsShield(e.text));
+}
 /* Human-readable list of category slots still awaiting a specific item */
 function pendingEquipPicks(){
   if(!S.klass) return [];
@@ -5110,7 +5117,8 @@ function renderEquipment(){
       +'<div class="pick-list">'+c.armorOptions.map(a=>'<label class="pick-item'+((S.armor||c.armorOptions[0])===a?' picked':'')+'">'
         +'<input type="radio" name="armorSel" data-armor="'+a+'"'+((S.armor||c.armorOptions[0])===a?' checked':'')+'>'
         +'<span><span class="pi-name">'+a+'</span><span class="pi-sub">'+ARMOR[a].desc+'</span></span></label>').join('')+'</div>'
-      +(c.shieldAllowed?'<label class="pick-item" style="max-width:320px;margin-top:6px"><input type="checkbox" data-shield'+(S.shield?' checked':'')+'><span><span class="pi-name">Carry a shield</span><span class="pi-sub">+2 AC; occupies one hand</span></span></label>':'')
+      +(c.shieldAllowed?'<label class="pick-item'+(S.shield?' picked':'')+'" style="max-width:320px;margin-top:6px"><input type="checkbox" data-shield'+(S.shield?' checked':'')+'><span><span class="pi-name">Carry a shield</span><span class="pi-sub">+2 AC; occupies one hand'
+        +(equipGrantsShield()?' — one comes with your starting kit':'')+'</span></span></label>':'')
       +'<div class="rules-note" style="margin-top:12px">Your Armor Class: <b style="font-size:1.2rem">'+acInfo.ac+'</b> ('+acInfo.armorKey+(S.shield?' + shield':'')+')'
       +(acInfo.stealthDis?' — <span style="color:var(--blood-bright)">disadvantage on Stealth checks</span>':'')+'</div>';
   }
@@ -5438,7 +5446,9 @@ document.addEventListener("click",e=>{
       S.subclass=null; S.asiPicks={}; S.hpRolls=[];
       S.multi=[];
     }
-    S.klass=t.dataset.pickClass; render(); return;
+    S.klass=t.dataset.pickClass;
+    S.shield=S.shield||equipGrantsShield();   // a shield in the fixed kit is yours from the start
+    render(); return;
   }
   if(t.dataset.addClass!==undefined){
     const name=t.dataset.addClass;
@@ -5605,11 +5615,16 @@ document.addEventListener("change",e=>{
     render(); return;
   }
   if(t.dataset.equipGroup){
-    const g=t.dataset.equipGroup;
+    const g=t.dataset.equipGroup, prev=S.equip[g], next=t.dataset.equipOpt;
     // switching options invalidates any item picked for the old one
-    if(S.equip[g]!==t.dataset.equipOpt)
+    if(prev!==next)
       Object.keys(S.equipPicks).forEach(k=>{ if(k.indexOf("g:"+g+"|")===0) delete S.equipPicks[k]; });
-    S.equip[g]=t.dataset.equipOpt; render(); return;
+    S.equip[g]=next;
+    // an option that comes with a shield carries the Armor Worn box with it,
+    // and giving it up drops the shield again unless the kit grants another
+    if(mentionsShield(next)) S.shield=true;
+    else if(prev&&mentionsShield(prev)) S.shield=equipGrantsShield();
+    render(); return;
   }
   if(t.dataset.armor){ S.armor=t.dataset.armor; render(); return; }
   if(t.dataset.shield!==undefined){ S.shield=t.checked; render(); return; }

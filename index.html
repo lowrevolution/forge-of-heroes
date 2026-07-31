@@ -1104,7 +1104,7 @@ function characterWeapons(){
 }
 function attackLine(name){
   const f=finalScores(), w=WEAPONS[name], pb=profBonus();
-  const monkish=S.klass==="Monk"&&(w.monk||name==="Unarmed strike");
+  const monkish=classEntries().some(en=>en.name==="Monk")&&(w.monk||name==="Unarmed strike");
   let abil="str";
   if(w.ranged) abil="dex";
   else if((w.finesse||monkish)&&mod(f.dex)>mod(f.str)) abil="dex";
@@ -3997,136 +3997,207 @@ function levelForXP(xp){
   for(let i=1;i<=MAX_LEVEL;i++) if(xp>=XP_THRESHOLDS[i]) L=i;
   return L;
 }
-function prog(){ return (S.klass && CLASSES[S.klass] && CLASSES[S.klass].progression) || null; }
-function casterType(){ const p=prog(); return p?p.casterType:"none"; }
+/* ---------- class entries: one view object per class the character has ----------
+   Entry 0 is the starting class, backed by the top-level S fields; added classes
+   live in S.multi. Array/object fields (skills, spells, asiPicks, hpRolls) are
+   shared references, so in-place mutation through a view reaches the state.
+   Scalar fields (level, subclass) must be written via setClassField(). */
+function classEntries(){
+  const out=[];
+  if(S.klass && CLASSES[S.klass])
+    out.push({ix:0,name:S.klass,level:S.level,subclass:S.subclass,
+      skills:S.skills,cantrips:S.cantrips,spells:S.spells1,asiPicks:S.asiPicks,hpRolls:S.hpRolls});
+  (S.multi||[]).forEach((m,i)=>{ if(CLASSES[m.name]) out.push(Object.assign({ix:i+1},m)); });
+  return out;
+}
+function setClassField(ix,patch){
+  if(ix===0){
+    if("level" in patch) S.level=patch.level;
+    if("subclass" in patch) S.subclass=patch.subclass;
+  } else if(S.multi[ix-1]) Object.assign(S.multi[ix-1],patch);
+}
+function totalLevel(){ const ens=classEntries(); return ens.length?ens.reduce((a,en)=>a+en.level,0):1; }
+function isMulticlassed(){ return classEntries().length>1; }
 
-function slotTable(){
-  const p=prog(); if(!p) return [];
-  const L=S.level;
+function progOf(en){ return (en && CLASSES[en.name] && CLASSES[en.name].progression) || null; }
+function casterTypeOf(en){ const p=progOf(en); return p?p.casterType:"none"; }
+
+/* The class's own slot table at its class level — governs which spell levels
+   this class can learn/prepare, even when combined slots reach higher */
+function classSlotTable(en){
+  const p=progOf(en); if(!p) return [];
+  const L=en.level;
   switch(p.casterType){
     case "full": return SLOTS_FULL[L]||[];
-    case "half": return (S.klass==="Artificer"?SLOTS_HALF_UP[L]:SLOTS_HALF[L])||[];
+    case "half": return (en.name==="Artificer"?SLOTS_HALF_UP[L]:SLOTS_HALF[L])||[];
     case "third": return SLOTS_THIRD[L]||[];
     default: return [];
   }
 }
-function pactSlots(){ return casterType()==="pact" ? (SLOTS_PACT[S.level]||[0,0]) : null; }
-/* Highest spell level this character can cast */
-function maxSpellLevel(){
-  if(casterType()==="pact"){ const ps=pactSlots(); return ps?ps[1]:0; }
-  const t=slotTable();
-  return t.length;
+/* Multiclass spellcaster level: full counts fully, half counts half (Artificer
+   rounds up), third counts a third. Pact magic never contributes. */
+function casterLevelOf(en){
+  switch(casterTypeOf(en)){
+    case "full": return en.level;
+    case "half": return en.name==="Artificer"?Math.ceil(en.level/2):Math.floor(en.level/2);
+    case "third": return Math.floor(en.level/3);
+    default: return 0;
+  }
 }
-/* Look up a stepped table like {1:2,4:3,10:4} for the current level */
+function slotCasterEntries(){ return classEntries().filter(en=>casterLevelOf(en)>0||["full","half","third"].includes(casterTypeOf(en))); }
+function combinedCasterLevel(){ return Math.min(20, slotCasterEntries().reduce((a,en)=>a+casterLevelOf(en),0)); }
+/* Shared spell slots: a lone caster uses its own class table; two or more
+   slot-casters pool onto the full-caster table at the combined caster level */
+function combinedSlotTable(){
+  const cs=slotCasterEntries();
+  if(!cs.length) return [];
+  if(cs.length===1) return classSlotTable(cs[0]);
+  return SLOTS_FULL[combinedCasterLevel()]||[];
+}
+function pactEntries(){ return classEntries().filter(en=>casterTypeOf(en)==="pact"); }
+/* Pact magic stacks separately from shared slots and returns on a short rest */
+function pactSlotsAll(){
+  const lvl=pactEntries().reduce((a,en)=>a+en.level,0);
+  return lvl?(SLOTS_PACT[Math.min(20,lvl)]||null):null;
+}
+/* Highest spell level this class can learn spells of */
+function maxSpellLevelOf(en){
+  if(casterTypeOf(en)==="pact") return (SLOTS_PACT[en.level]||[0,0])[1];
+  return classSlotTable(en).length;
+}
+/* Look up a stepped table like {1:2,4:3,10:4} for the given level */
 function steppedAt(table, L){
   if(!table) return 0;
   let val=0;
   Object.keys(table).map(Number).sort((a,b)=>a-b).forEach(k=>{ if(k<=L) val=table[k]; });
   return val;
 }
-function cantripsKnownAt(){
-  const p=prog();
-  if(p && p.cantripsKnown) return steppedAt(p.cantripsKnown, S.level);
-  const sc=S.klass&&CLASSES[S.klass].spellcasting;
+function cantripsKnownOf(en){
+  const p=progOf(en);
+  if(p && p.cantripsKnown) return steppedAt(p.cantripsKnown, en.level);
+  const sc=CLASSES[en.name].spellcasting;
   return sc?sc.cantrips:0;
 }
-/* Total number of spells the character knows / prepares / has in a spellbook */
-function spellBudget(){
-  const p=prog(), sc=S.klass&&CLASSES[S.klass].spellcasting;
+/* Number of spells this class knows / prepares / has in a spellbook */
+function spellBudgetOf(en){
+  const p=progOf(en), sc=CLASSES[en.name].spellcasting;
   if(!sc) return 0;
-  if(p && p.spellsKnown) return steppedAt(p.spellsKnown, S.level);
-  if(sc.mode==="book") return 6+(S.level-1)*2;                    // wizard spellbook
+  if(p && p.spellsKnown) return steppedAt(p.spellsKnown, en.level);
+  if(sc.mode==="book") return 6+(en.level-1)*2;                   // wizard spellbook
   if(sc.mode==="prepared"){
     const abilMod=mod(finalScores()[sc.ability]);
     const divisor=(p&&p.casterType==="half")?2:1;
-    return Math.max(1, abilMod+Math.floor(S.level/divisor));
+    return Math.max(1, abilMod+Math.floor(en.level/divisor));
   }
   if(sc.mode==="known") return sc.known||0;
   return 0;
 }
-function profBonus(){ return 2+Math.floor((S.level-1)/4); }
+function profBonus(){ return 2+Math.floor((totalLevel()-1)/4); }
 
-/* ---------- subclass ---------- */
-function subclassInfo(){ return S.klass?SUBCLASSES[S.klass]:null; }
-function subclassUnlocked(){
-  const si=subclassInfo(); const p=prog();
+/* ---------- subclass (per class entry) ---------- */
+function subclassInfoOf(en){ return en?SUBCLASSES[en.name]:null; }
+function subclassUnlockedOf(en){
+  const si=subclassInfoOf(en); const p=progOf(en);
   const lvl=si?si.level:(p?p.subclassLevel:99);
-  return S.level>=lvl;
+  return en.level>=lvl;
 }
-function currentSubclass(){
-  const si=subclassInfo();
-  return (si && S.subclass && si.options[S.subclass]) ? si.options[S.subclass] : null;
+function currentSubclassOf(en){
+  const si=subclassInfoOf(en);
+  return (si && en.subclass && si.options[en.subclass]) ? si.options[en.subclass] : null;
 }
 
-/* ---------- ability score improvements & feats ---------- */
-function asiLevels(){ const p=prog(); return p?(p.asiLevels||[]):[]; }
-function availableASIs(){ return asiLevels().filter(L=>L<=S.level); }
+/* ---------- ability score improvements & feats (per class level) ---------- */
+function asiLevelsOf(en){ const p=progOf(en); return p?(p.asiLevels||[]):[]; }
+function availableASIsOf(en){ return asiLevelsOf(en).filter(L=>L<=en.level); }
 function asiBonus(){
   const b={str:0,dex:0,con:0,int:0,wis:0,cha:0};
-  for(const L of availableASIs()){
-    const pick=S.asiPicks[L];
-    if(!pick) continue;
-    if(pick.mode==="asi"){
-      if(pick.a1&&b[pick.a1]!==undefined) b[pick.a1]++;
-      if(pick.a2&&b[pick.a2]!==undefined) b[pick.a2]++;
-    } else if(pick.mode==="feat" && pick.feat && FEATS[pick.feat]){
-      const fa=FEATS[pick.feat].asi;
-      if(typeof fa==="string" && b[fa]!==undefined) b[fa]++;
-      else if(Array.isArray(fa) && pick.featAbil && b[pick.featAbil]!==undefined) b[pick.featAbil]++;
+  classEntries().forEach(en=>{
+    for(const L of availableASIsOf(en)){
+      const pick=en.asiPicks[L];
+      if(!pick) continue;
+      if(pick.mode==="asi"){
+        if(pick.a1&&b[pick.a1]!==undefined) b[pick.a1]++;
+        if(pick.a2&&b[pick.a2]!==undefined) b[pick.a2]++;
+      } else if(pick.mode==="feat" && pick.feat && FEATS[pick.feat]){
+        const fa=FEATS[pick.feat].asi;
+        if(typeof fa==="string" && b[fa]!==undefined) b[fa]++;
+        else if(Array.isArray(fa) && pick.featAbil && b[pick.featAbil]!==undefined) b[pick.featAbil]++;
+      }
     }
-  }
+  });
   return b;
 }
 function chosenFeats(){
-  return availableASIs().map(L=>S.asiPicks[L]).filter(p=>p&&p.mode==="feat"&&p.feat).map(p=>p.feat);
+  const out=[];
+  classEntries().forEach(en=>{
+    availableASIsOf(en).forEach(L=>{
+      const p=en.asiPicks[L];
+      if(p&&p.mode==="feat"&&p.feat) out.push(p.feat);
+    });
+  });
+  return out;
 }
 
-/* ---------- features gained across all levels ---------- */
+/* ---------- features gained across all classes and levels ---------- */
 function allFeatures(){
-  const out=[];   // {lvl, n, d, src}
-  if(!S.klass) return out;
-  const c=CLASSES[S.klass];
-  (c.features||[]).forEach(f=>out.push({lvl:1,n:f.n,d:f.d,src:S.klass}));
-  const p=prog();
-  if(p && p.featuresByLevel){
-    Object.keys(p.featuresByLevel).map(Number).sort((a,b)=>a-b).forEach(L=>{
-      if(L<=S.level) p.featuresByLevel[L].forEach(f=>out.push({lvl:L,n:f.n,d:f.d,src:S.klass}));
-    });
-  }
-  const sub=currentSubclass();
-  if(sub && sub.features){
-    Object.keys(sub.features).map(Number).sort((a,b)=>a-b).forEach(L=>{
-      if(L<=S.level) sub.features[L].forEach(f=>out.push({lvl:L,n:f.n,d:f.d,src:S.subclass}));
-    });
-  }
-  return out.sort((a,b)=>a.lvl-b.lvl);
+  const out=[];   // {lvl, n, d, src, ix}
+  classEntries().forEach(en=>{
+    const c=CLASSES[en.name];
+    (c.features||[]).forEach(f=>out.push({lvl:1,n:f.n,d:f.d,src:en.name,ix:en.ix}));
+    const p=progOf(en);
+    if(p && p.featuresByLevel){
+      Object.keys(p.featuresByLevel).map(Number).sort((a,b)=>a-b).forEach(L=>{
+        if(L<=en.level) p.featuresByLevel[L].forEach(f=>out.push({lvl:L,n:f.n,d:f.d,src:en.name,ix:en.ix}));
+      });
+    }
+    const sub=currentSubclassOf(en);
+    if(sub && sub.features){
+      Object.keys(sub.features).map(Number).sort((a,b)=>a-b).forEach(L=>{
+        if(L<=en.level) sub.features[L].forEach(f=>out.push({lvl:L,n:f.n,d:f.d,src:en.subclass,ix:en.ix}));
+      });
+    }
+  });
+  return out.sort((a,b)=>a.ix-b.ix||a.lvl-b.lvl);
 }
 
 /* ---------- hit points ---------- */
 function hpPerLevelBonus(){
   let b=0;
   if(S.race==="Dwarf (Hill)") b+=1;
-  if(S.klass==="Sorcerer" && S.subclass==="Draconic Bloodline") b+=1;
+  if(classEntries().some(en=>en.name==="Sorcerer"&&en.subclass==="Draconic Bloodline")) b+=1;
   if(chosenFeats().includes("Tough")) b+=2;
   return b;
 }
+/* Levels needing a roll: the starting class rolls from its 2nd level (its 1st is
+   the maximum die); every level of an added class is rolled */
+function hpRollCount(en){ return Math.max(0, en.ix===0?en.level-1:en.level); }
 function computeHP(){
-  if(!S.klass) return null;
-  const die=CLASSES[S.klass].hitDie;
+  const ens=classEntries(); if(!ens.length) return null;
   const conMod=mod(finalScores().con);
   const per=hpPerLevelBonus();
-  let hp=die+conMod+per;                              // level 1: max hit die
-  const avg=Math.floor(die/2)+1;
-  for(let L=2;L<=S.level;L++){
-    const rolled=S.hpRolls[L-2];
-    hp+=(S.hpMode==="rolled"&&rolled?rolled:avg)+conMod+per;
-  }
-  return Math.max(S.level, hp);
+  let hp=0;
+  ens.forEach(en=>{
+    const die=CLASSES[en.name].hitDie, avg=Math.floor(die/2)+1;
+    if(en.ix===0) hp+=die+conMod+per;                 // very first character level: max hit die
+    for(let i=0;i<hpRollCount(en);i++){
+      const rolled=en.hpRolls[i];
+      hp+=(S.hpMode==="rolled"&&rolled?rolled:avg)+conMod+per;
+    }
+  });
+  return Math.max(totalLevel(), hp);
+}
+/* Grow or shrink an entry's rolls to match its level, keeping existing rolls */
+function resizeHpRolls(en){
+  const die=CLASSES[en.name].hitDie, n=hpRollCount(en);
+  if(en.hpRolls.length>n) en.hpRolls.length=n;
+  while(en.hpRolls.length<n) en.hpRolls.push(1+Math.floor(Math.random()*die));
 }
 function rollHitDice(){
-  const die=CLASSES[S.klass].hitDie;
-  S.hpRolls=[];
-  for(let L=2;L<=S.level;L++) S.hpRolls.push(1+Math.floor(Math.random()*die));
+  classEntries().forEach(en=>{
+    const die=CLASSES[en.name].hitDie;
+    en.hpRolls.length=0;
+    for(let i=0;i<hpRollCount(en);i++) en.hpRolls.push(1+Math.floor(Math.random()*die));
+  });
 }
 </script>
 
@@ -4186,6 +4257,53 @@ for(const k in SUBCLASSES){
   }
 }
 
+/* =====================================================================
+   MULTICLASSING — prerequisites and the reduced proficiencies gained
+   when taking a level in a new class (PHB multiclassing rules; sensible
+   equivalents for the expansion classes).
+   req: CNF groups — every group must contain at least one ability at 13+.
+   skillPick: a skill choice granted on multiclassing in ("class" list or "any").
+===================================================================== */
+const MULTICLASS = {
+  "Barbarian":  {req:[["str"]],               prof:"Shields, simple weapons, martial weapons"},
+  "Bard":       {req:[["cha"]],               prof:"Light armor, one musical instrument", skillPick:{count:1,from:"any"}},
+  "Cleric":     {req:[["wis"]],               prof:"Light armor, medium armor, shields"},
+  "Druid":      {req:[["wis"]],               prof:"Light armor, medium armor, shields (druids will not wear metal)"},
+  "Fighter":    {req:[["str","dex"]],         prof:"Light armor, medium armor, shields, simple weapons, martial weapons"},
+  "Monk":       {req:[["dex"],["wis"]],       prof:"Simple weapons, shortswords"},
+  "Paladin":    {req:[["str"],["cha"]],       prof:"Light armor, medium armor, shields, simple weapons, martial weapons"},
+  "Ranger":     {req:[["dex"],["wis"]],       prof:"Light armor, medium armor, shields, simple weapons, martial weapons", skillPick:{count:1,from:"class"}},
+  "Rogue":      {req:[["dex"]],               prof:"Light armor, thieves' tools", skillPick:{count:1,from:"class"}},
+  "Sorcerer":   {req:[["cha"]],               prof:"None"},
+  "Warlock":    {req:[["cha"]],               prof:"Light armor, simple weapons"},
+  "Wizard":     {req:[["int"]],               prof:"None"},
+  "Artificer":  {req:[["int"]],               prof:"Light armor, medium armor, shields, thieves' tools, tinker's tools"},
+  "Blood Hunter":{req:[["str","dex"],["int"]],prof:"Light armor, medium armor, shields, simple weapons, martial weapons"},
+  "Warlord":    {req:[["str","dex"],["cha"]], prof:"Light armor, medium armor, shields, simple weapons, martial weapons"},
+  "Psion":      {req:[["int"]],               prof:"None"},
+  "Alchemist":  {req:[["int"]],               prof:"Light armor, alchemist's supplies"},
+  "Shaman":     {req:[["wis"]],               prof:"Light armor, medium armor, shields"},
+  "Warden":     {req:[["str"],["wis"]],       prof:"Light armor, medium armor, shields, simple weapons, martial weapons"},
+  "Spellblade": {req:[["str","dex"],["int"]], prof:"Light armor, medium armor, shields, simple weapons, martial weapons"},
+  "Necromancer":{req:[["int"]],               prof:"None"},
+  "Pugilist":   {req:[["str","dex"]],         prof:"Simple weapons"}
+};
+/* Any class missing from the table falls back to 13+ in its primary ability */
+const MC_ABIL_BY_NAME={Strength:"str",Dexterity:"dex",Constitution:"con",Intelligence:"int",Wisdom:"wis",Charisma:"cha"};
+function mcInfo(name){
+  if(MULTICLASS[name]) return MULTICLASS[name];
+  const prim=(CLASSES[name]&&CLASSES[name].primary)||"";
+  const abils=Object.keys(MC_ABIL_BY_NAME).filter(w=>prim.includes(w)).map(w=>MC_ABIL_BY_NAME[w]);
+  return {req:prim.includes(" or ")?[abils]:abils.map(a=>[a]), prof:"None"};
+}
+function mcMeets(name,scores){ return mcInfo(name).req.every(g=>g.some(a=>(scores[a]||0)>=13)); }
+function mcReqText(name){
+  const AB={str:"Str",dex:"Dex",con:"Con",int:"Int",wis:"Wis",cha:"Cha"};
+  const groups=mcInfo(name).req;
+  if(!groups.length) return "none";
+  return groups.map(g=>g.map(a=>AB[a]+" 13").join(" or ")).join(", and ");
+}
+
 /* Higher-level spells */
 if(typeof SPELLS_HI!=="undefined") Object.assign(SPELLS,SPELLS_HI);
 if(typeof SPELL_META_HI!=="undefined") Object.assign(SPELL_META,SPELL_META_HI);
@@ -4222,12 +4340,12 @@ if(CLASSES.Sorcerer){
 }
 
 /* Every spell the class list can reach, grouped by spell level */
-function spellsByLevel(){
-  const sc=S.klass&&CLASSES[S.klass].spellcasting;
+function spellsByLevel(en){
+  const sc=CLASSES[en.name].spellcasting;
   if(!sc) return {};
   const list=CLASS_SPELLS[sc.listKey]||{};
   const out={};
-  const maxL=maxSpellLevel();
+  const maxL=maxSpellLevelOf(en);
   for(let L=1;L<=maxL;L++){
     const arr=list["level"+L]||[];
     const valid=arr.filter(n=>SPELLS[n]);
@@ -4235,8 +4353,8 @@ function spellsByLevel(){
   }
   return out;
 }
-function autoSpells(){
-  return (S.klass==="Cleric" && S.subclass==="Life Domain") ? ["Bless","Cure Wounds"] : [];
+function autoSpells(en){
+  return (en.name==="Cleric" && en.subclass==="Life Domain") ? ["Bless","Cure Wounds"] : [];
 }
 </script>
 
@@ -4244,6 +4362,122 @@ function autoSpells(){
 /* =====================================================================
    STEP: ADVANCEMENT — level, XP, hit points, subclass, ASIs & feats
 ===================================================================== */
+/* ---------- per-class pieces of the Advancement ledger ---------- */
+function subclassUI(en){
+  const si=subclassInfoOf(en);
+  if(!si) return "";
+  if(!subclassUnlockedOf(en)){
+    return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">'+si.label+'</h3>'
+      +'<div class="rules-note">You choose your '+si.label+' at <b>'+(isMulticlassed()?en.name+' level ':'level ')+si.level+'</b>. Raise your '+(isMulticlassed()?en.name+' ':'')+'level to unlock it.</div>';
+  }
+  const cards=Object.entries(si.options).map(([k,o])=>
+    '<div class="choice-card'+(en.subclass===k?' selected':'')+'" data-pick-sub="'+k+'" data-ix="'+en.ix+'">'
+    +'<h3 style="font-size:1rem">'+k+'</h3><div class="tagline">'+o.tagline+'</div></div>').join('');
+  let sd="";
+  const sub=currentSubclassOf(en);
+  if(sub){
+    const lvls=Object.keys(sub.features).map(Number).sort((a,b)=>a-b);
+    sd='<div class="detail-pane"><h3>'+en.subclass+'</h3><div class="flavor">'+sub.flavor+'</div>'
+      +lvls.map(L=>drill((L<=en.level?"✦ ":"🔒 ")+"Level "+L+(L<=en.level?"":" — not yet reached"),
+          traitList(sub.features[L]), L<=en.level, "subfeat-"+en.ix+"-L"+L)).join('')
+      +'</div>';
+  }
+  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">'+si.label+'</h3>'
+    +'<div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">'+cards+'</div>'+sd;
+}
+
+function asiUI(en){
+  const f=finalScores();
+  const avail=availableASIsOf(en), all=asiLevelsOf(en);
+  if(!all.length) return "";
+  const rows=avail.map(L=>{
+    const pick=en.asiPicks[L]||{mode:"asi",a1:"",a2:""};
+    const abilSel=(slot,val)=>'<select data-asi-abil="'+L+'" data-ix="'+en.ix+'" data-slot="'+slot+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif)">'
+      +'<option value="">— ability —</option>'
+      +ABILITIES.map(a=>{
+          const cur=f[a];
+          const cap=cur>=20&&val!==a;
+          return '<option value="'+a+'"'+(val===a?' selected':'')+(cap?' disabled':'')+'>'+ABILITY_INFO[a].name+' ('+cur+')'+(cap?' — at maximum':'')+'</option>';
+        }).join('')+'</select>';
+    const featOpts='<select data-asi-feat="'+L+'" data-ix="'+en.ix+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif);max-width:100%">'
+      +'<option value="">— choose a feat —</option>'
+      +Object.keys(FEATS).sort().map(fn=>'<option'+(pick.feat===fn?' selected':'')+'>'+fn+'</option>').join('')+'</select>';
+    const featInfo=(pick.mode==="feat"&&pick.feat&&FEATS[pick.feat])
+      ? '<div class="trait" style="margin-top:6px"><b>'+pick.feat+'.</b> <span class="t-desc">'+FEATS[pick.feat].d
+        +(FEATS[pick.feat].prereq?' <i>Prerequisite: '+FEATS[pick.feat].prereq+'.</i>':'')+'</span></div>'
+        +(Array.isArray(FEATS[pick.feat].asi)
+          ? '<div style="margin-top:4px">This feat also raises one ability by 1: <select data-asi-featabil="'+L+'" data-ix="'+en.ix+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:4px;font-family:var(--serif)"><option value="">— choose —</option>'
+            +FEATS[pick.feat].asi.map(a=>'<option value="'+a+'"'+(pick.featAbil===a?' selected':'')+'>'+ABILITY_INFO[a].name+'</option>').join('')+'</select></div>'
+          : (typeof FEATS[pick.feat].asi==="string"?'<div style="margin-top:4px;color:var(--ok);font-size:.85rem">Also grants +1 '+ABILITY_INFO[FEATS[pick.feat].asi].name+'</div>':''))
+      : "";
+    return '<div style="border:1px solid var(--border-dim);border-radius:6px;padding:12px 14px;margin:8px 0;background:rgba(0,0,0,.2)">'
+      +'<b style="color:var(--gold);font-variant:small-caps;letter-spacing:.05em">'+(isMulticlassed()?en.name+' level ':'Level ')+L+'</b>'
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;align-items:center">'
+      +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+en.ix+'-'+L+'" data-asi-mode="'+L+'" data-ix="'+en.ix+'" value="asi"'+(pick.mode!=="feat"?" checked":"")+' style="accent-color:var(--gold)"> Ability Score Improvement</label>'
+      +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+en.ix+'-'+L+'" data-asi-mode="'+L+'" data-ix="'+en.ix+'" value="feat"'+(pick.mode==="feat"?" checked":"")+' style="accent-color:var(--gold)"> Take a Feat</label>'
+      +'</div>'
+      +'<div style="margin-top:8px">'
+      +(pick.mode==="feat" ? featOpts+featInfo
+        : '<span style="color:var(--ink-dim);font-size:.9rem">Raise two abilities by 1 each, or pick the same twice for +2 (maximum 20): </span><br>'+abilSel(1,pick.a1)+' '+abilSel(2,pick.a2))
+      +'</div></div>';
+  }).join('');
+  const upcoming=all.filter(L=>L>en.level);
+  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">Ability Score Improvements &amp; Feats</h3>'
+    +'<div class="rules-note">'+en.name+' gains an improvement at '+(isMulticlassed()?en.name+' levels ':'levels ')+'<b>'+all.join(", ")+'</b>. Each may be spent on +2 to one ability, +1 to two abilities, or a feat. No ability may exceed 20.</div>'
+    +(rows||'<div style="color:var(--ink-dim);font-style:italic">None yet — your first comes at '+(isMulticlassed()?en.name+' level ':'level ')+all[0]+'.</div>')
+    +(upcoming.length?'<div style="color:var(--ink-dim);font-size:.88rem;margin-top:6px">Still to come at '+(isMulticlassed()?en.name+' level ':'level ')+upcoming.join(", ")+'.</div>':'');
+}
+
+function classRowUI(en){
+  const c=CLASSES[en.name];
+  const canRaise=totalLevel()<MAX_LEVEL;
+  const stepper='<span style="display:inline-flex;align-items:center;gap:8px;margin-left:auto">'
+    +'<button class="btn" data-lvl-delta="-1" data-ix="'+en.ix+'"'+(en.level<=1?' disabled':'')+' style="padding:2px 12px;font-size:1.1rem" title="Lower '+en.name+' level">−</button>'
+    +'<b style="font-size:1.6rem;color:var(--gold-bright);min-width:34px;text-align:center">'+en.level+'</b>'
+    +'<button class="btn" data-lvl-delta="1" data-ix="'+en.ix+'"'+(canRaise?'':' disabled')+' style="padding:2px 12px;font-size:1.1rem" title="Raise '+en.name+' level">+</button>'
+    +(en.ix>0?'<button class="btn" data-act="remove-class" data-ix="'+en.ix+'" style="padding:2px 10px" title="Abandon this class entirely">✖</button>':'')
+    +'</span>';
+  let mcNote="";
+  if(en.ix>0){
+    const mc=mcInfo(en.name);
+    mcNote='<div class="rules-note" style="margin-top:8px">Multiclass proficiencies gained: <b>'+(mc.prof||"None")+'</b>. '
+      +'A new class never grants its full starting proficiencies, saving throws, or equipment — those come only from your starting class.</div>'
+      +mcSkillPickerUI(en);
+  }
+  return '<div style="border:1px solid var(--border-gold);border-radius:8px;padding:14px 16px;margin:12px 0;background:rgba(0,0,0,.15)">'
+    +'<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    +'<div><b style="font-size:1.25rem;color:var(--gold);font-variant:small-caps;letter-spacing:.04em">'+en.name+'</b>'
+    +(en.subclass?' <span style="color:var(--ink-dim)">('+en.subclass+')</span>':'')
+    +'<div style="font-size:.8rem;color:var(--ink-dim)">Hit die d'+c.hitDie+(en.ix===0?' · starting class':'')+'</div></div>'
+    +stepper+'</div>'
+    +mcNote
+    +subclassUI(en)
+    +asiUI(en)
+    +'</div>';
+}
+
+function addClassUI(){
+  const ens=classEntries(), f=finalScores(), TL=totalLevel();
+  const taken=new Set(ens.map(en=>en.name));
+  const currentOK=ens.every(en=>mcMeets(en.name,f));
+  const cards=Object.keys(CLASSES).filter(k=>!taken.has(k)).map(k=>{
+    const ok=mcMeets(k,f)&&currentOK&&TL<MAX_LEVEL;
+    let why="";
+    if(TL>=MAX_LEVEL) why="Level 20 reached — no room to grow";
+    else if(!mcMeets(k,f)) why="Requires "+mcReqText(k);
+    else if(!currentOK) why="Your current class prerequisites are unmet";
+    return '<div class="choice-card"'+(ok?' data-add-class="'+k+'"':' ')+' style="'+(ok?'':'opacity:.45;cursor:not-allowed')+'">'
+      +'<h3 style="font-size:1rem">'+k+'</h3><div class="tagline">'+CLASSES[k].tagline+'</div>'
+      +'<div class="statline">'+(ok?'Prerequisite: '+mcReqText(k):'🔒 '+why)+'</div></div>';
+  }).join('');
+  return drill('➕ Add a class — multiclassing',
+    '<div class="rules-note">To take a level in a new class you need <b>13 or higher</b> in its key abilities — and in those of every class you already have. '
+    +'Your character level is the sum of all class levels (maximum 20); proficiency bonus follows character level. '
+    +'A new class grants only reduced proficiencies and no extra starting equipment.</div>'
+    +'<div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">'+cards+'</div>',
+    false, "add-class");
+}
+
 function renderAdvancement(){
   if(!S.klass){
     $("step-advancement").innerHTML='<div class="panel"><h2><span class="ornament">✦</span> Advancement</h2>'
@@ -4251,130 +4485,89 @@ function renderAdvancement(){
       +'<div class="step-footer"><button class="btn" data-goto="2">◂ Base Class</button><button class="btn gold" data-goto="4">Background ▸</button></div></div>';
     return;
   }
-  const c=CLASSES[S.klass], p=prog(), f=finalScores();
+  const ens=classEntries(), f=finalScores(), TL=totalLevel();
 
   /* --- level & experience --- */
-  const nextXP=S.level<MAX_LEVEL?xpForLevel(S.level+1):null;
+  const nextXP=TL<MAX_LEVEL?xpForLevel(TL+1):null;
+  const classSummary=ens.map(en=>en.name+" "+en.level).join(" / ");
   const levelUI='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">'
     +'<div><div style="font-variant:small-caps;color:var(--ink-dim)">Character Level</div>'
-    +'<input type="range" min="1" max="20" value="'+S.level+'" data-level-slider style="width:260px;accent-color:var(--gold)">'
-    +'<div style="text-align:center;font-size:2rem;color:var(--gold-bright);line-height:1">'+S.level+'</div></div>'
+    +'<div style="text-align:center;font-size:2rem;color:var(--gold-bright);line-height:1.1">'+TL+'</div>'
+    +'<div style="text-align:center;font-size:.85rem;color:var(--ink-dim)">'+classSummary+'</div></div>'
     +'<div><div style="font-variant:small-caps;color:var(--ink-dim)">Experience Points</div>'
     +'<input type="number" min="0" step="100" value="'+S.xp+'" data-xp style="width:140px;background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:5px;padding:8px;font-family:var(--serif);font-size:1.1rem">'
-    +'<div style="font-size:.8rem;color:var(--ink-dim);margin-top:4px">Level '+S.level+' begins at '+xpForLevel(S.level).toLocaleString()+' XP'
-    +(nextXP?'<br>Next level at '+nextXP.toLocaleString()+' XP':'<br>Maximum level reached')+'</div></div>'
+    +'<div style="font-size:.8rem;color:var(--ink-dim);margin-top:4px">Level '+TL+' begins at '+xpForLevel(TL).toLocaleString()+' XP'
+    +(nextXP?'<br>Next level at '+nextXP.toLocaleString()+' XP':'<br>Maximum level reached')
+    +(isMulticlassed()&&levelForXP(S.xp)!==TL?'<br><span style="color:var(--blood-bright)">This XP supports level '+levelForXP(S.xp)+' — adjust your class levels to match.</span>':'')+'</div></div>'
     +'<div><div style="font-variant:small-caps;color:var(--ink-dim)">Proficiency Bonus</div>'
     +'<div style="font-size:2rem;color:var(--gold-bright);line-height:1.2">+'+profBonus()+'</div></div>'
     +'</div>';
 
+  /* --- class ledger --- */
+  const ledgerUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Your Class'+(ens.length>1?'es':'')+'</h3>'
+    +ens.map(classRowUI).join('')
+    +addClassUI();
+
   /* --- hit points --- */
-  const die=c.hitDie, avg=Math.floor(die/2)+1;
+  const die0=CLASSES[ens[0].name].hitDie;
+  const hdSummary=ens.map(en=>en.level+"d"+CLASSES[en.name].hitDie).join(" + ");
+  const avgText=isMulticlassed()
+    ? 'Take the fixed average of each class’ die'
+    : 'Take '+(Math.floor(die0/2)+1)+' per level — the safe standard';
+  const rollPools=(S.hpMode==="rolled")
+    ? ens.filter(en=>hpRollCount(en)>0&&en.hpRolls.length).map(en=>
+        '<div style="margin-top:4px"><span style="font-variant:small-caps;color:var(--ink-dim)">'+en.name+' (d'+CLASSES[en.name].hitDie+')</span>'
+        +'<div class="roll-pool" style="padding-bottom:4px">'+en.hpRolls.slice(0,hpRollCount(en)).map((v,i)=>
+          '<div class="rolled-die" style="cursor:default" title="'+(en.ix===0?"Level "+(i+2):en.name+" level "+(i+1))+'">'+v+'</div>').join('')+'</div></div>').join('')
+    : '';
   const hpUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Hit Points</h3>'
-    +'<div class="rules-note">At 1st level you gain the maximum roll (<b>'+die+'</b>) plus your Constitution modifier. Each level after grants either the fixed average (<b>'+avg+'</b>) or a fresh <b>d'+die+'</b> roll, plus your Constitution modifier again.</div>'
+    +'<div class="rules-note">At 1st level you gain the maximum roll of your starting class’ hit die (<b>'+die0+'</b>) plus your Constitution modifier. '
+    +'Each level after grants either the fixed average or a fresh roll of <b>that class’</b> hit die, plus your Constitution modifier again.</div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
-    +'<label class="pick-item" style="max-width:230px"><input type="radio" name="hpmode" data-hpmode="average"'+(S.hpMode==="average"?" checked":"")+'><span><span class="pi-name">Fixed average</span><span class="pi-sub">Take '+avg+' per level — the safe standard</span></span></label>'
-    +'<label class="pick-item" style="max-width:230px"><input type="radio" name="hpmode" data-hpmode="rolled"'+(S.hpMode==="rolled"?" checked":"")+'><span><span class="pi-name">Roll each level</span><span class="pi-sub">Cast a d'+die+' for every level after the first</span></span></label>'
+    +'<label class="pick-item" style="max-width:230px"><input type="radio" name="hpmode" data-hpmode="average"'+(S.hpMode==="average"?" checked":"")+'><span><span class="pi-name">Fixed average</span><span class="pi-sub">'+avgText+'</span></span></label>'
+    +'<label class="pick-item" style="max-width:230px"><input type="radio" name="hpmode" data-hpmode="rolled"'+(S.hpMode==="rolled"?" checked":"")+'><span><span class="pi-name">Roll each level</span><span class="pi-sub">Cast the class’ die for every level after the first</span></span></label>'
     +(S.hpMode==="rolled"?'<button class="btn gold" data-act="roll-hp">🎲 Roll hit dice</button>':'')
     +'</div>'
-    +(S.hpMode==="rolled"&&S.hpRolls.length?'<div class="roll-pool" style="padding-bottom:4px">'+S.hpRolls.slice(0,S.level-1).map((v,i)=>'<div class="rolled-die" style="cursor:default" title="Level '+(i+2)+'">'+v+'</div>').join('')+'</div>':'')
+    +rollPools
     +'<div class="rules-note" style="margin-top:10px">Total Hit Points: <b style="font-size:1.3rem">'+computeHP()+'</b> '
-    +'<span style="font-size:.85rem">(d'+die+' hit die, Constitution '+fmtMod(mod(f.con))+' per level'+(hpPerLevelBonus()?', '+fmtMod(hpPerLevelBonus())+' per level from traits':'')+')</span></div>';
+    +'<span style="font-size:.85rem">(hit dice '+hdSummary+', Constitution '+fmtMod(mod(f.con))+' per level'+(hpPerLevelBonus()?', '+fmtMod(hpPerLevelBonus())+' per level from traits':'')+')</span></div>';
 
-  /* --- subclass --- */
-  let subUI="";
-  const si=subclassInfo();
-  if(si){
-    if(!subclassUnlocked()){
-      subUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">'+si.label+'</h3>'
-        +'<div class="rules-note">You choose your '+si.label+' at <b>level '+si.level+'</b>. Raise your level to unlock it.</div>';
-    } else {
-      const cards=Object.entries(si.options).map(([k,o])=>
-        '<div class="choice-card'+(S.subclass===k?' selected':'')+'" data-pick-sub="'+k+'">'
-        +'<h3 style="font-size:1rem">'+k+'</h3><div class="tagline">'+o.tagline+'</div></div>').join('');
-      let sd="";
-      const sub=currentSubclass();
-      if(sub){
-        const lvls=Object.keys(sub.features).map(Number).sort((a,b)=>a-b);
-        sd='<div class="detail-pane"><h3>'+S.subclass+'</h3><div class="flavor">'+sub.flavor+'</div>'
-          +lvls.map(L=>drill((L<=S.level?"✦ ":"🔒 ")+"Level "+L+(L<=S.level?"":" — not yet reached"),
-              traitList(sub.features[L]), L<=S.level, "subfeat-L"+L)).join('')
-          +'</div>';
-      }
-      subUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">'+si.label+'</h3>'
-        +'<div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">'+cards+'</div>'+sd;
-    }
-  }
-
-  /* --- ability score improvements & feats --- */
-  let asiUI="";
-  const avail=availableASIs(), all=asiLevels();
-  if(all.length){
-    const rows=avail.map(L=>{
-      const pick=S.asiPicks[L]||{mode:"asi",a1:"",a2:""};
-      const abilSel=(slot,val)=>'<select data-asi-abil="'+L+'" data-slot="'+slot+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif)">'
-        +'<option value="">— ability —</option>'
-        +ABILITIES.map(a=>{
-            const cur=f[a];
-            const cap=cur>=20&&val!==a;
-            return '<option value="'+a+'"'+(val===a?' selected':'')+(cap?' disabled':'')+'>'+ABILITY_INFO[a].name+' ('+cur+')'+(cap?' — at maximum':'')+'</option>';
-          }).join('')+'</select>';
-      const featOpts='<select data-asi-feat="'+L+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif);max-width:100%">'
-        +'<option value="">— choose a feat —</option>'
-        +Object.keys(FEATS).sort().map(fn=>'<option'+(pick.feat===fn?' selected':'')+'>'+fn+'</option>').join('')+'</select>';
-      const featInfo=(pick.mode==="feat"&&pick.feat&&FEATS[pick.feat])
-        ? '<div class="trait" style="margin-top:6px"><b>'+pick.feat+'.</b> <span class="t-desc">'+FEATS[pick.feat].d
-          +(FEATS[pick.feat].prereq?' <i>Prerequisite: '+FEATS[pick.feat].prereq+'.</i>':'')+'</span></div>'
-          +(Array.isArray(FEATS[pick.feat].asi)
-            ? '<div style="margin-top:4px">This feat also raises one ability by 1: <select data-asi-featabil="'+L+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:4px;font-family:var(--serif)"><option value="">— choose —</option>'
-              +FEATS[pick.feat].asi.map(a=>'<option value="'+a+'"'+(pick.featAbil===a?' selected':'')+'>'+ABILITY_INFO[a].name+'</option>').join('')+'</select></div>'
-            : (typeof FEATS[pick.feat].asi==="string"?'<div style="margin-top:4px;color:var(--ok);font-size:.85rem">Also grants +1 '+ABILITY_INFO[FEATS[pick.feat].asi].name+'</div>':''))
-        : "";
-      return '<div style="border:1px solid var(--border-dim);border-radius:6px;padding:12px 14px;margin:8px 0;background:rgba(0,0,0,.2)">'
-        +'<b style="color:var(--gold);font-variant:small-caps;letter-spacing:.05em">Level '+L+'</b>'
-        +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;align-items:center">'
-        +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+L+'" data-asi-mode="'+L+'" value="asi"'+(pick.mode!=="feat"?" checked":"")+' style="accent-color:var(--gold)"> Ability Score Improvement</label>'
-        +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+L+'" data-asi-mode="'+L+'" value="feat"'+(pick.mode==="feat"?" checked":"")+' style="accent-color:var(--gold)"> Take a Feat</label>'
-        +'</div>'
-        +'<div style="margin-top:8px">'
-        +(pick.mode==="feat" ? featOpts+featInfo
-          : '<span style="color:var(--ink-dim);font-size:.9rem">Raise two abilities by 1 each, or pick the same twice for +2 (maximum 20): </span><br>'+abilSel(1,pick.a1)+' '+abilSel(2,pick.a2))
-        +'</div></div>';
+  /* --- features gained, grouped by class --- */
+  const featsAll=allFeatures();
+  const featureUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Features Gained</h3>'
+    +ens.map(en=>{
+      const mine=featsAll.filter(ft=>ft.ix===en.ix);
+      const byLevel={};
+      mine.forEach(ft=>{ (byLevel[ft.lvl]=byLevel[ft.lvl]||[]).push(ft); });
+      const inner=Object.keys(byLevel).map(Number).sort((a,b)=>a-b).map(L=>
+        drill((isMulticlassed()?en.name+" level ":"Level ")+L+" <span class='lvl-tag'>"+byLevel[L].length+"</span>",
+          traitList(byLevel[L].map(ft=>({n:ft.n+" <i style='color:var(--ink-dim);font-weight:normal'>("+ft.src+")</i>",d:ft.d}))), L===en.level, "features-"+en.ix+"-L"+L)).join('');
+      return (isMulticlassed()?'<h4 style="color:var(--gold);font-variant:small-caps;margin:12px 0 4px">'+en.name+' (levels 1–'+en.level+')</h4>':'')+inner;
     }).join('');
-    const upcoming=all.filter(L=>L>S.level);
-    asiUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Ability Score Improvements &amp; Feats</h3>'
-      +'<div class="rules-note">'+S.klass+' gains an improvement at levels <b>'+all.join(", ")+'</b>. Each may be spent on +2 to one ability, +1 to two abilities, or a feat. No ability may exceed 20.</div>'
-      +(rows||'<div style="color:var(--ink-dim);font-style:italic">None yet — your first comes at level '+all[0]+'.</div>')
-      +(upcoming.length?'<div style="color:var(--ink-dim);font-size:.88rem;margin-top:6px">Still to come at level '+upcoming.join(", ")+'.</div>':'');
-  }
 
-  /* --- features gained --- */
-  const feats=allFeatures();
-  const byLevel={};
-  feats.forEach(ft=>{ (byLevel[ft.lvl]=byLevel[ft.lvl]||[]).push(ft); });
-  const featureUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Features Gained (levels 1–'+S.level+')</h3>'
-    +Object.keys(byLevel).map(Number).sort((a,b)=>a-b).map(L=>
-      drill("Level "+L+" <span class='lvl-tag'>"+byLevel[L].length+"</span>",
-        traitList(byLevel[L].map(ft=>({n:ft.n+" <i style='color:var(--ink-dim);font-weight:normal'>("+ft.src+")</i>",d:ft.d}))), L===S.level, "features-L"+L)).join('');
-
-  /* --- spell slots --- */
+  /* --- spell slots: shared pool + pact magic --- */
   let slotUI="";
-  if(casterType()!=="none"){
-    if(casterType()==="pact"){
-      const ps=pactSlots();
-      slotUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Pact Magic</h3>'
-        +'<div class="rules-note"><b>'+ps[0]+'</b> spell slot'+(ps[0]===1?"":"s")+' of <b>level '+ps[1]+'</b>, all regained on a short or long rest.</div>';
-    } else {
-      const t=slotTable();
-      slotUI='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Spell Slots</h3>'
-        +(t.length?'<div class="stat-chips">'+t.map((n,i)=>'<span class="chip"><b>Level '+(i+1)+':</b> '+n+' slot'+(n===1?"":"s")+'</span>').join('')+'</div>'
-          :'<div class="rules-note">No spell slots at this level yet.</div>');
-    }
+  const cs=slotCasterEntries(), ps=pactSlotsAll();
+  if(cs.length){
+    const t=combinedSlotTable();
+    slotUI+='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Spell Slots'+(cs.length>1?' — shared across your classes':'')+'</h3>'
+      +(cs.length>1?'<div class="rules-note">Multiclass spellcasting: slots come from your <b>combined caster level '+combinedCasterLevel()+'</b> — full casters count every level, half-casters half (Artificer rounds up), third-casters a third. Each class still <i>learns</i> spells as if it stood alone.</div>':'')
+      +(t.length?'<div class="stat-chips">'+t.map((n,i)=>'<span class="chip"><b>Level '+(i+1)+':</b> '+n+' slot'+(n===1?"":"s")+'</span>').join('')+'</div>'
+        :'<div class="rules-note">No spell slots at this level yet.</div>');
   }
+  if(ps){
+    slotUI+='<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Pact Magic</h3>'
+      +'<div class="rules-note"><b>'+ps[0]+'</b> spell slot'+(ps[0]===1?"":"s")+' of <b>level '+ps[1]+'</b>, all regained on a short or long rest'
+      +(cs.length?' — entirely separate from the shared slots above':'')+'.</div>';
+  }
+
+  /* --- per-class spell pickers --- */
+  const spellUI=ens.map(en=>spellPickerUI(en)).join('');
 
   $("step-advancement").innerHTML=
     '<div class="panel"><h2><span class="ornament">✦</span> Advancement</h2>'
-    +'<p class="lede">Set your level and experience, then spend everything your class grants along the way — hit points, a subclass, skill proficiencies, spell slots and spells, ability improvements, and feats.</p>'
-    +levelUI+hpUI+subUI+skillPickerUI()+slotUI+spellPickerUI()+asiUI+featureUI
+    +'<p class="lede">Set your levels and experience, then spend everything your classes grant along the way — hit points, subclasses, skill proficiencies, spell slots and spells, ability improvements, and feats. Meet the prerequisites and you may even take up a second class.</p>'
+    +levelUI+ledgerUI+hpUI+skillPickerUI()+slotUI+spellUI+featureUI
     +'<div class="step-footer"><button class="btn" data-goto="2">◂ Base Class</button><button class="btn gold" data-goto="4">Background ▸</button></div>'
     +'</div>';
 }
@@ -4394,6 +4587,8 @@ const S = {
   race:null, raceChoices:{},
   klass:null, classChoices:{}, skills:[], cantrips:[], spells1:[],
   level:1, xp:0, subclass:null, asiPicks:{}, hpMode:"average", hpRolls:[],
+  // additional classes beyond the first; the starting class keeps the fields above
+  multi:[],   // [{name, level, subclass, skills:[], cantrips:[], spells:[], asiPicks:{}, hpRolls:[]}]
   background:null,
   equip:{}, armor:null, shield:false, items:[],
   name:"", alignment:"", persona:{traits:"",ideals:"",bonds:"",flaws:""}
@@ -4449,6 +4644,8 @@ function grantedSkills(){
       });
     });
   }
+  // skills picked through a multiclass grant are proficiencies like any other
+  classEntries().forEach(en=>{ if(en.ix>0) en.skills.forEach(s=>g.add(s)); });
   return g;
 }
 function skillBudget(){
@@ -4501,7 +4698,7 @@ function traitList(traits){
 ===================================================================== */
 function renderNav(){
   const doneFlags=[abilitiesDone(), !!S.race, !!S.klass,
-    !!(S.klass&&(!subclassUnlocked()||S.subclass)), !!S.background,
+    !!(S.klass&&classEntries().every(en=>!subclassUnlockedOf(en)||en.subclass)), !!S.background,
     !!(S.klass&&Object.keys(S.equip).length), !!(S.name&&S.alignment), false];
   $("step-nav").innerHTML=STEPS.map((st,i)=>
     '<button data-goto="'+i+'" class="'+(i===S.step?'active':'')+(doneFlags[i]?' done':'')+'">'+st.title+'</button>'
@@ -4656,43 +4853,70 @@ function skillPickerUI(){
     +'<div class="pick-list">'+skillItems+'</div>';
 }
 
-function spellPickerUI(){
-  const c=CLASSES[S.klass], sc=c.spellcasting;
+function spellPickerUI(en){
+  const c=CLASSES[en.name], sc=c.spellcasting;
   if(!sc) return "";
   const list=CLASS_SPELLS[sc.listKey]||{cantrips:[],level1:[]};
-  const budget=spellBudget(), cantripMax=cantripsKnownAt(), auto=autoSpells();
-  const spellsFull=S.spells1.length>=budget, cantripsFull=S.cantrips.length>=cantripMax;
+  const budget=spellBudgetOf(en), cantripMax=cantripsKnownOf(en), auto=autoSpells(en);
+  const spellsFull=en.spells.length>=budget, cantripsFull=en.cantrips.length>=cantripMax;
   const mkItems=(names,group,picked)=>names.map(sp=>{
     const s=SPELLS[sp]; if(!s) return "";
-    const isAuto=group==="spells1"&&auto.includes(sp);
+    const isAuto=group==="spells"&&auto.includes(sp);
     const isPicked=picked.includes(sp)||isAuto;
     const full=!isPicked&&(group==="cantrips"?cantripsFull:spellsFull);
     return '<label class="pick-item'+(isPicked?' picked':'')+((isAuto||full)?' locked':'')+'">'
-      +'<input type="checkbox" data-spell="'+group+'" data-name="'+sp+'"'+(isPicked?' checked':'')+((isAuto||full)?' disabled':'')+'>'
+      +'<input type="checkbox" data-spell="'+group+'" data-ix="'+en.ix+'" data-name="'+sp+'"'+(isPicked?' checked':'')+((isAuto||full)?' disabled':'')+'>'
       +'<span><span class="pi-name">'+sp+'</span><span class="pi-sub">'+s.school+(isAuto?' · always prepared (domain)':'')
       +(SPELL_META[sp]?' · '+SPELL_META[sp][0]+' · '+SPELL_META[sp][1]+' · '+SPELL_META[sp][2]+' · '+SPELL_META[sp][3]:'')
       +' — '+s.d+'</span></span></label>';
   }).join('');
+  const lvlWord=isMulticlassed()?en.name.toLowerCase()+" level "+en.level:"level "+en.level;
   const verb = sc.mode==="prepared" ? "prepare" : sc.mode==="book" ? "record in your spellbook" : "know";
-  const modeNote = sc.mode==="prepared" ? (sc.prepNote||"")+" At level "+S.level+" you prepare <b>"+budget+"</b> spells."
-    : sc.mode==="book" ? "Your spellbook holds <b>"+budget+"</b> spells at level "+S.level+" (six at 1st level, two more each level after)."
-    : "You know <b>"+budget+"</b> spells at level "+S.level+", chosen permanently.";
-  const byLvl=spellsByLevel(), maxL=maxSpellLevel();
+  const modeNote = sc.mode==="prepared" ? (sc.prepNote||"")+" At "+lvlWord+" you prepare <b>"+budget+"</b> spells."
+    : sc.mode==="book" ? "Your spellbook holds <b>"+budget+"</b> spells at "+lvlWord+" (six at 1st level, two more each level after)."
+    : "You know <b>"+budget+"</b> spells at "+lvlWord+", chosen permanently.";
+  const byLvl=spellsByLevel(en), maxL=maxSpellLevelOf(en);
   const ordinal=n=>n+(["th","st","nd","rd"][n%100>>3^1&&n%10]||"th");
   const counts={};
-  S.spells1.forEach(n=>{ const l=(SPELLS[n]||{}).lvl; if(l) counts[l]=(counts[l]||0)+1; });
+  en.spells.forEach(n=>{ const l=(SPELLS[n]||{}).lvl; if(l) counts[l]=(counts[l]||0)+1; });
   const levelBlocks=Object.keys(byLvl).map(Number).sort((a,b)=>a-b).map(L=>
     drill(ordinal(L)+'-Level Spells <span class="lvl-tag">'+(counts[L]||0)+' of '+byLvl[L].length+' chosen</span>',
-      '<div class="pick-list spell-block">'+mkItems(byLvl[L],"spells1",S.spells1)+'</div>', L===1, "spells-L"+L)
+      '<div class="pick-list spell-block">'+mkItems(byLvl[L],"spells",en.spells)+'</div>', L===1, "spells-"+en.ix+"-L"+L)
   ).join('');
-  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Spells ('+ABILITY_INFO[sc.ability].name+')</h3>'
+  const mcNote=(isMulticlassed()&&slotCasterEntries().length>1&&casterTypeOf(en)!=="pact")
+    ? ' Which spell levels you can <i>learn</i> comes from your '+en.name+' level alone; the shared slots above may still cast them at higher levels.' : '';
+  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Spells — '+(isMulticlassed()?en.name+' ':'')+'('+ABILITY_INFO[sc.ability].name+')</h3>'
     +'<div class="rules-note">'+modeNote+' Spell save DC = 8 + '+profBonus()+' + '+ABILITY_INFO[sc.ability].name.slice(0,3)+' mod'
-    +(maxL?'. You can cast spells up to <b>level '+maxL+'</b>':'')+'.</div>'
-    +'<div class="pick-counter">Cantrips <b>'+S.cantrips.length+'</b>/'+cantripMax
-    +' · Spells you '+verb+' <b>'+S.spells1.length+'</b>/'+budget
+    +(maxL?'. You can learn spells up to <b>level '+maxL+'</b>':'')+'.'+mcNote+'</div>'
+    +'<div class="pick-counter">Cantrips <b>'+en.cantrips.length+'</b>/'+cantripMax
+    +' · Spells you '+verb+' <b>'+en.spells.length+'</b>/'+budget
     +(spellsFull?' <span style="color:var(--blood-bright)">— all spent; clear one to choose another</span>':'')+'</div>'
-    +(cantripMax?drill('Cantrips <span class="lvl-tag">'+S.cantrips.length+' of '+cantripMax+' chosen</span>','<div class="pick-list spell-block">'+mkItems(list.cantrips||[],"cantrips",S.cantrips)+'</div>', true, "spells-cantrips"):"")
+    +(cantripMax?drill('Cantrips <span class="lvl-tag">'+en.cantrips.length+' of '+cantripMax+' chosen</span>','<div class="pick-list spell-block">'+mkItems(list.cantrips||[],"cantrips",en.cantrips)+'</div>', true, "spells-"+en.ix+"-cantrips"):"")
     +(levelBlocks||'<div class="rules-note">No spell slots yet at this level.</div>');
+}
+
+/* One-skill picker shown when a newly added class grants a multiclass skill */
+function mcSkillPickerUI(en){
+  const mc=mcInfo(en.name); if(!mc.skillPick) return "";
+  const from=mc.skillPick.from==="any"?Object.keys(SKILLS):CLASSES[en.name].skills.from;
+  const count=mc.skillPick.count;
+  const elsewhere=new Set(S.skills);
+  if(S.background) BACKGROUNDS[S.background].skills.forEach(s=>elsewhere.add(s));
+  classEntries().forEach(o=>{ if(o.ix!==en.ix&&o.ix>0) o.skills.forEach(s=>elsewhere.add(s)); });
+  const full=en.skills.length>=count;
+  const items=from.map(sk=>{
+    const picked=en.skills.includes(sk);
+    const taken=!picked&&elsewhere.has(sk);
+    const lock=taken||(!picked&&full);
+    return '<label class="pick-item'+(picked?' picked':'')+(lock?' locked':'')+'">'
+      +'<input type="checkbox" data-mcskill="'+sk+'" data-ix="'+en.ix+'"'+(picked?' checked':'')+(lock?' disabled':'')+'>'
+      +'<span><span class="pi-name">'+sk+'</span><span class="pi-sub">'+ABILITY_INFO[SKILLS[sk]].name
+      +(taken?' · already proficient':(!picked&&full?' · no picks left':''))+'</span></span></label>';
+  }).join('');
+  return '<div style="margin-top:10px">'
+    +'<div class="pick-counter">Joining the '+en.name+' class grants <b>'+count+'</b> skill'+(count===1?'':'s')
+    +(mc.skillPick.from==="any"?' of your choice':' from its class list')+' — picked <b>'+en.skills.length+'</b>/'+count+'.</div>'
+    +'<div class="pick-list">'+items+'</div></div>';
 }
 
 /* ---------- Step 4: Background ---------- */
@@ -4859,18 +5083,27 @@ function renderSummary(){
   if(S.klass){
     const b=skillBudget(), fromClass=S.skills.filter(s=>CLASSES[S.klass].skills.from.includes(s)).length;
     if(fromClass<b.classCount) missing.push("Class skill picks incomplete (Step IV).");
-    const sc=CLASSES[S.klass].spellcasting;
-    if(sc){
-      if(S.cantrips.length<cantripsKnownAt()) missing.push("Cantrip picks incomplete (Step IV).");
-      if(S.spells1.length<spellBudget()) missing.push("Spell picks incomplete — "+S.spells1.length+" of "+spellBudget()+" (Step IV).");
-    }
-    if(subclassUnlocked() && subclassInfo() && !S.subclass)
-      missing.push("No "+subclassInfo().label+" chosen (Step IV).");
-    availableASIs().forEach(L=>{
-      const p=S.asiPicks[L];
-      if(!p) missing.push("Level "+L+" ability improvement or feat not chosen (Step IV).");
-      else if(p.mode==="feat"&&!p.feat) missing.push("Level "+L+" feat not chosen (Step IV).");
-      else if(p.mode!=="feat"&&(!p.a1||!p.a2)) missing.push("Level "+L+" ability increases incomplete (Step IV).");
+    classEntries().forEach(en=>{
+      const tag=isMulticlassed()?en.name+" ":"";
+      const sc=CLASSES[en.name].spellcasting;
+      if(sc){
+        if(en.cantrips.length<cantripsKnownOf(en)) missing.push((tag?tag+"cantrip":"Cantrip")+" picks incomplete (Step IV).");
+        if(en.spells.length<spellBudgetOf(en)) missing.push((tag?tag+"spell":"Spell")+" picks incomplete — "+en.spells.length+" of "+spellBudgetOf(en)+" (Step IV).");
+      }
+      if(subclassUnlockedOf(en) && subclassInfoOf(en) && !en.subclass)
+        missing.push("No "+subclassInfoOf(en).label+" chosen"+(isMulticlassed()?" for "+en.name:"")+" (Step IV).");
+      if(en.ix>0){
+        const mc=mcInfo(en.name);
+        if(mc.skillPick && en.skills.length<mc.skillPick.count)
+          missing.push(en.name+" multiclass skill pick incomplete (Step IV).");
+      }
+      availableASIsOf(en).forEach(L=>{
+        const p=en.asiPicks[L];
+        const lbl=(isMulticlassed()?en.name+" level ":"Level ")+L;
+        if(!p) missing.push(lbl+" ability improvement or feat not chosen (Step IV).");
+        else if(p.mode==="feat"&&!p.feat) missing.push(lbl+" feat not chosen (Step IV).");
+        else if(p.mode!=="feat"&&(!p.a1||!p.a2)) missing.push(lbl+" ability increases incomplete (Step IV).");
+      });
     });
   }
   if(!S.background) missing.push("No background chosen (Step V).");
@@ -4915,27 +5148,36 @@ function renderSummary(){
       return '<div class="atk-line"><span><b>'+name+'</b>'+note+'<br><small>'+L.props+'</small></span>'
         +'<span style="text-align:right;white-space:nowrap"><b>'+fmtMod(L.hit)+'</b> to hit<br>'+L.dmg+'</span></div>';
     }).join('');
+    const hasClass=name=>classEntries().some(en=>en.name===name);
     const atkNotes='<div style="font-size:.75rem;color:#6b5a35;margin-top:6px">To hit = proficiency + ability modifier (Dex for ranged/finesse, otherwise Str). '
-      +(S.klass==="Barbarian"?"Add +2 damage to Strength melee attacks while raging. ":"")
-      +(S.klass==="Rogue"?"Sneak Attack adds +1d6 once per turn when you have advantage or an ally is adjacent to the target. ":"")
-      +(S.klass==="Monk"?"Martial Arts: unarmed strikes deal 1d4 and may use Dex; bonus-action unarmed strike after attacking. ":"")+'</div>';
+      +(hasClass("Barbarian")?"Add +2 damage to Strength melee attacks while raging. ":"")
+      +(hasClass("Rogue")?"Sneak Attack adds +1d6 once per turn when you have advantage or an ally is adjacent to the target. ":"")
+      +(hasClass("Monk")?"Martial Arts: unarmed strikes deal 1d4 and may use Dex; bonus-action unarmed strike after attacking. ":"")+'</div>';
 
     let spellBox="";
-    const sc=c.spellcasting;
-    if(sc){
-      const dc=8+pb+mod(f[sc.ability]), atk=pb+mod(f[sc.ability]);
-      const allL1=[...new Set([...autoSpells(),...S.spells1])]
-        .sort((a,b)=>((SPELLS[a]||{}).lvl||0)-((SPELLS[b]||{}).lvl||0)||a.localeCompare(b));
-      const ps=pactSlots(), st=slotTable();
-      const slotText = ps ? ("<b>"+ps[0]+"</b> pact slot"+(ps[0]===1?"":"s")+" of level <b>"+ps[1]+"</b> (short rest)")
-        : (st.length?st.map((n,i)=>"L"+(i+1)+": "+n).join(" · "):"none yet");
-      spellBox='<div class="sheet-box" style="grid-column:1/-1"><h4>Spellcasting — '+ABILITY_INFO[sc.ability].name+'</h4>'
-        +'<div>Spell save DC <b>'+dc+'</b> · Spell attack <b>'+fmtMod(atk)+'</b></div>'
-        +'<div><b>Slots:</b> '+slotText+'</div>'
-        +'<div style="margin-top:6px"><b>Cantrips:</b> '+(S.cantrips.join(", ")||"—")+'</div>'
-        +'<div><b>Spells:</b> '+(allL1.map(n=>n+" <small>("+((SPELLS[n]||{}).lvl||0)+")</small>").join(", ")||"—")+'</div>'
-        +drill("Full spell details — casting time, range, components, duration", spellDetails(S.cantrips.concat(allL1)))
-        +'</div>';
+    const casters=classEntries().filter(en=>CLASSES[en.name].spellcasting);
+    if(casters.length){
+      const st=combinedSlotTable(), ps=pactSlotsAll();
+      const slotText=[
+        st.length?st.map((n,i)=>"L"+(i+1)+": "+n).join(" · "):"",
+        ps?("<b>"+ps[0]+"</b> pact slot"+(ps[0]===1?"":"s")+" of level <b>"+ps[1]+"</b> (short rest)"):""
+      ].filter(Boolean).join(" — plus ")||"none yet";
+      const inner=casters.map(en=>{
+        const sc=CLASSES[en.name].spellcasting;
+        const dc=8+pb+mod(f[sc.ability]), atk=pb+mod(f[sc.ability]);
+        const allSp=[...new Set([...autoSpells(en),...en.spells])]
+          .sort((a,b)=>((SPELLS[a]||{}).lvl||0)-((SPELLS[b]||{}).lvl||0)||a.localeCompare(b));
+        return '<div style="margin-top:6px">'
+          +(casters.length>1?'<b>'+en.name+'</b> — ':'')+ABILITY_INFO[sc.ability].name
+          +': spell save DC <b>'+dc+'</b> · spell attack <b>'+fmtMod(atk)+'</b>'
+          +'<div><b>Cantrips:</b> '+(en.cantrips.join(", ")||"—")+'</div>'
+          +'<div><b>Spells:</b> '+(allSp.map(n=>n+" <small>("+((SPELLS[n]||{}).lvl||0)+")</small>").join(", ")||"—")+'</div>'
+          +drill("Full spell details — casting time, range, components, duration"+(casters.length>1?" ("+en.name+")":""),
+            spellDetails(en.cantrips.concat(allSp)), false, "sheet-spells-"+en.ix)
+          +'</div>';
+      }).join('');
+      spellBox='<div class="sheet-box" style="grid-column:1/-1"><h4>Spellcasting</h4>'
+        +'<div><b>Slots:</b> '+slotText+'</div>'+inner+'</div>';
     }
 
     const persona=Object.entries({["Personality"]:S.persona.traits,Ideals:S.persona.ideals,Bonds:S.persona.bonds,Flaws:S.persona.flaws})
@@ -4943,13 +5185,14 @@ function renderSummary(){
 
     sheet='<div class="sheet" id="print-sheet">'
       +'<h2><span class="char-name">'+(S.name||"Unnamed Hero")+'</span></h2>'
-      +'<div class="id-line">Level '+S.level+' '+S.race+' '+S.klass+(S.subclass?' ('+S.subclass+')':'')
+      +'<div class="id-line">Level '+totalLevel()+' '+S.race+' '
+      +classEntries().map(en=>en.name+(isMulticlassed()?' '+en.level:'')+(en.subclass?' ('+en.subclass+')':'')).join(' / ')
       +(S.background?' · '+S.background:'')+(S.alignment?' · '+S.alignment:'')+' · '+S.xp.toLocaleString()+' XP</div>'
       +'<div class="sheet-abilities">'+ABILITIES.map(a=>'<div class="sheet-ab" title="'+ABILITY_INFO[a].name+' — '+ABILITY_INFO[a].desc+'"><div class="sa-name">'+ABILITY_INFO[a].name.slice(0,3)+'</div><div class="sa-mod">'+fmtMod(mod(f[a]))+'</div><div class="sa-score">'+f[a]+'</div></div>').join('')+'</div>'
       +'<div class="combat-row">'
       +'<div class="combat-stat"><div class="cs-val">'+acInfo.ac+'</div><div class="cs-label">Armor Class</div><div class="cs-sub">Touch '+acInfo.touch+' · Flat-footed '+acInfo.flat+'</div></div>'
       +'<div class="combat-stat"><div class="cs-val">'+hp+'</div><div class="cs-label">Hit Points</div></div>'
-      +'<div class="combat-stat"><div class="cs-val">'+S.level+'d'+c.hitDie+'</div><div class="cs-label">Hit Dice</div></div>'
+      +'<div class="combat-stat"><div class="cs-val">'+classEntries().map(en=>en.level+'d'+CLASSES[en.name].hitDie).join('+')+'</div><div class="cs-label">Hit Dice</div></div>'
       +'<div class="combat-stat"><div class="cs-val">'+fmtMod(mod(f.dex))+'</div><div class="cs-label">Initiative</div></div>'
       +'<div class="combat-stat"><div class="cs-val">'+r.speed+'</div><div class="cs-label">Speed (ft.)</div></div>'
       +'<div class="combat-stat"><div class="cs-val">+'+pb+'</div><div class="cs-label">Proficiency</div></div>'
@@ -4967,6 +5210,7 @@ function renderSummary(){
       +spellBox
       +'<div class="sheet-box"><h4>Proficiencies &amp; Languages</h4>'
       +'<div><b>Armor:</b> '+c.armorProf+'</div><div><b>Weapons:</b> '+c.weaponProf+'</div><div><b>Tools:</b> '+[c.toolProf,...(S.background?BACKGROUNDS[S.background].tools:[])].filter(x=>x&&x!=="None").join("; ")+'</div>'
+      +classEntries().filter(en=>en.ix>0).map(en=>'<div><b>Multiclass ('+en.name+'):</b> '+(mcInfo(en.name).prof||"None")+'</div>').join('')
       +'<div><b>Languages:</b> '+r.languages.join(", ")+(S.background&&BACKGROUNDS[S.background].languages?(" + "+BACKGROUNDS[S.background].languages+" of your choice"):"")+'</div></div>'
       +'<div class="sheet-box"><h4>Appearance</h4>'
       +([["Height",S.body.height],["Weight",S.body.weight],["Hair",S.body.hair],["Eyes",S.body.eyes],[skinLabel,S.body.skin]]
@@ -5027,6 +5271,10 @@ function load(){
       if(!d.hpMode) d.hpMode="average";
       if(!d.items) d.items=[];
       if(d.subclass===undefined) d.subclass=null;
+      // migrate single-class saves and sanitize multiclass entries
+      if(!Array.isArray(d.multi)) d.multi=[];
+      d.multi=d.multi.filter(m=>m && CLASSES[m.name])
+        .map(m=>Object.assign({name:"",level:1,subclass:null,skills:[],cantrips:[],spells:[],asiPicks:{},hpRolls:[]},m));
       Object.assign(S,d);
     }
   }catch(e){}
@@ -5038,7 +5286,7 @@ function roll4d6dl(){
 }
 
 document.addEventListener("click",e=>{
-  const t=e.target.closest("[data-goto],[data-act],[data-pick-race],[data-pick-class],[data-pick-bg],[data-pick-align],[data-pick-sub]");
+  const t=e.target.closest("[data-goto],[data-act],[data-pick-race],[data-pick-class],[data-pick-bg],[data-pick-align],[data-pick-sub],[data-add-class],[data-lvl-delta]");
   if(!t) return;
   if(t.dataset.goto!==undefined){ S.step=+t.dataset.goto; render(); window.scrollTo({top:0,behavior:"smooth"}); return; }
   if(t.dataset.pickRace!==undefined){
@@ -5050,8 +5298,45 @@ document.addEventListener("click",e=>{
       S.classChoices={}; S.skills=[]; S.cantrips=[]; S.spells1=[];
       S.equip={}; S.armor=null; S.shield=false;
       S.subclass=null; S.asiPicks={}; S.hpRolls=[];
+      S.multi=[];
     }
     S.klass=t.dataset.pickClass; render(); return;
+  }
+  if(t.dataset.addClass!==undefined){
+    const name=t.dataset.addClass;
+    if(totalLevel()<MAX_LEVEL && CLASSES[name] && !classEntries().some(en=>en.name===name)){
+      S.multi.push({name, level:1, subclass:null, skills:[], cantrips:[], spells:[], asiPicks:{}, hpRolls:[]});
+      if(S.hpMode==="rolled") classEntries().forEach(resizeHpRolls);
+      S.xp=xpForLevel(totalLevel());
+      DRILL_STATE["add-class"]=false;
+    }
+    render(); return;
+  }
+  if(t.dataset.act==="remove-class"){
+    const ix=+t.dataset.ix;
+    if(ix>0 && S.multi[ix-1]){
+      if(!confirm("Abandon the "+S.multi[ix-1].name+" class? Its levels and choices will be lost.")) return;
+      S.multi.splice(ix-1,1);
+      S.xp=xpForLevel(totalLevel());
+    }
+    render(); return;
+  }
+  if(t.dataset.lvlDelta!==undefined){
+    const ix=+(t.dataset.ix||0), delta=+t.dataset.lvlDelta;
+    const en=classEntries().find(o=>o.ix===ix);
+    if(en){
+      const newL=Math.max(1,Math.min(en.level+delta, en.level+(MAX_LEVEL-totalLevel())));
+      if(newL!==en.level){
+        setClassField(ix,{level:newL});
+        const upd=classEntries().find(o=>o.ix===ix);
+        if(S.hpMode==="rolled") resizeHpRolls(upd);
+        // drop any subclass/ASI choices that this class level no longer grants
+        if(!subclassUnlockedOf(upd)) setClassField(ix,{subclass:null});
+        Object.keys(upd.asiPicks).forEach(L=>{ if(+L>upd.level) delete upd.asiPicks[L]; });
+        S.xp=xpForLevel(totalLevel());
+      }
+    }
+    render(); return;
   }
   if(t.dataset.pickBg!==undefined){
     S.background=t.dataset.pickBg;
@@ -5059,10 +5344,10 @@ document.addEventListener("click",e=>{
     render(); return;
   }
   if(t.dataset.pickAlign!==undefined){ S.alignment=t.dataset.pickAlign; render(); return; }
-  if(t.dataset.pickSub!==undefined){ S.subclass=t.dataset.pickSub; render(); return; }
+  if(t.dataset.pickSub!==undefined){ setClassField(+(t.dataset.ix||0),{subclass:t.dataset.pickSub}); render(); return; }
   if(t.dataset.act==="roll-hp"){
     rollHitDice();
-    Dice.log("Hit dice (levels 2–"+S.level+"): "+S.hpRolls.join(", "));
+    Dice.log("Hit dice: "+classEntries().filter(en=>en.hpRolls.length).map(en=>en.name+" ["+en.hpRolls.join(", ")+"]").join(" · "));
     render(); return;
   }
   if(t.dataset.act==="roll-abilities"){
@@ -5082,9 +5367,10 @@ document.addEventListener("click",e=>{
   if(t.dataset.act==="print"){ window.print(); return; }
   if(t.dataset.act==="download"){
     const data={meta:"Forge of Heroes — fifth-edition-compatible character (built on the open SRD)",
-      level:S.level,character:S,finalScores:finalScores(),
+      level:totalLevel(),classes:classEntries().map(en=>({name:en.name,level:en.level,subclass:en.subclass})),
+      character:S,finalScores:finalScores(),
       ac:computeAC(),hp:computeHP(),proficiencyBonus:profBonus(),
-      spellSlots:pactSlots()||slotTable(),features:allFeatures(),feats:chosenFeats()};
+      spellSlots:combinedSlotTable(),pactMagic:pactSlotsAll(),features:allFeatures(),feats:chosenFeats()};
     const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
@@ -5140,22 +5426,35 @@ document.addEventListener("change",e=>{
   }
   if(t.dataset.spell){
     const group=t.dataset.spell, name=t.dataset.name;
-    const max=group==="cantrips"?cantripsKnownAt():spellBudget();
-    const arr=group==="cantrips"?S.cantrips:S.spells1;
+    const en=classEntries().find(o=>o.ix===+(t.dataset.ix||0));
+    if(!en) return;
+    const max=group==="cantrips"?cantripsKnownOf(en):spellBudgetOf(en);
+    const arr=group==="cantrips"?en.cantrips:en.spells;
     if(t.checked){ if(arr.length<max && !arr.includes(name)) arr.push(name); }
     else{ const i=arr.indexOf(name); if(i>=0) arr.splice(i,1); }
     render(); return;
   }
-  if(t.dataset.hpmode){ S.hpMode=t.dataset.hpmode; if(S.hpMode==="rolled"&&!S.hpRolls.length) rollHitDice(); render(); return; }
-  if(t.dataset.asiMode){ const L=t.dataset.asiMode;
-    S.asiPicks[L]=Object.assign({a1:"",a2:"",feat:"",featAbil:""},S.asiPicks[L],{mode:t.value}); render(); return; }
-  if(t.dataset.asiAbil){ const L=t.dataset.asiAbil;
-    S.asiPicks[L]=Object.assign({mode:"asi",a1:"",a2:""},S.asiPicks[L]);
-    S.asiPicks[L]["a"+t.dataset.slot]=t.value; render(); return; }
-  if(t.dataset.asiFeat){ const L=t.dataset.asiFeat;
-    S.asiPicks[L]=Object.assign({mode:"feat"},S.asiPicks[L],{feat:t.value,featAbil:""}); render(); return; }
-  if(t.dataset.asiFeatabil){ const L=t.dataset.asiFeatabil;
-    S.asiPicks[L]=Object.assign({mode:"feat"},S.asiPicks[L],{featAbil:t.value}); render(); return; }
+  if(t.dataset.mcskill){
+    const en=classEntries().find(o=>o.ix===+(t.dataset.ix||0));
+    if(en && en.ix>0){
+      const sk=t.dataset.mcskill, mc=mcInfo(en.name);
+      const count=mc.skillPick?mc.skillPick.count:0;
+      if(t.checked){ if(en.skills.length<count && !en.skills.includes(sk)) en.skills.push(sk); }
+      else{ const i=en.skills.indexOf(sk); if(i>=0) en.skills.splice(i,1); }
+      S.skills=S.skills.filter(s=>!grantedSkills().has(s)); // free up any now-granted base picks
+    }
+    render(); return;
+  }
+  if(t.dataset.hpmode){ S.hpMode=t.dataset.hpmode; if(S.hpMode==="rolled") classEntries().forEach(resizeHpRolls); render(); return; }
+  const asiStore=ix=>{ const en=classEntries().find(o=>o.ix===+(ix||0)); return en?en.asiPicks:null; };
+  if(t.dataset.asiMode){ const L=t.dataset.asiMode, ap=asiStore(t.dataset.ix);
+    if(ap) ap[L]=Object.assign({a1:"",a2:"",feat:"",featAbil:""},ap[L],{mode:t.value}); render(); return; }
+  if(t.dataset.asiAbil){ const L=t.dataset.asiAbil, ap=asiStore(t.dataset.ix);
+    if(ap){ ap[L]=Object.assign({mode:"asi",a1:"",a2:""},ap[L]); ap[L]["a"+t.dataset.slot]=t.value; } render(); return; }
+  if(t.dataset.asiFeat){ const L=t.dataset.asiFeat, ap=asiStore(t.dataset.ix);
+    if(ap) ap[L]=Object.assign({mode:"feat"},ap[L],{feat:t.value,featAbil:""}); render(); return; }
+  if(t.dataset.asiFeatabil){ const L=t.dataset.asiFeatabil, ap=asiStore(t.dataset.ix);
+    if(ap) ap[L]=Object.assign({mode:"feat"},ap[L],{featAbil:t.value}); render(); return; }
   if(t.dataset.item){
     const it=t.dataset.item;
     if(t.checked){ if(!S.items.includes(it)) S.items.push(it); }
@@ -5170,26 +5469,16 @@ document.addEventListener("change",e=>{
 document.addEventListener("input",e=>{
   const t=e.target;
   if(t.id==="char-name"){ S.name=t.value; save(); }
-  if(t.dataset&&("levelSlider" in t.dataset)){
-    const newL=Math.max(1,Math.min(MAX_LEVEL,+t.value||1));
-    if(newL!==S.level){
-      S.level=newL;
-      S.xp=xpForLevel(newL);
-      if(S.hpMode==="rolled") rollHitDice();
-      // drop any subclass/ASI choices that this level no longer grants
-      if(!subclassUnlocked()) S.subclass=null;
-      Object.keys(S.asiPicks).forEach(L=>{ if(+L>S.level) delete S.asiPicks[L]; });
-      render();
-    }
-    return;
-  }
   if(t.dataset&&("xp" in t.dataset)){
     S.xp=Math.max(0,+t.value||0);
     const L=levelForXP(S.xp);
-    if(L!==S.level){
+    // single-classed: XP drives the level, as ever. Multiclassed: the class
+    // steppers own the levels — XP is recorded and a hint shows any mismatch.
+    if(!isMulticlassed() && L!==S.level){
       S.level=L;
-      if(S.hpMode==="rolled") rollHitDice();
-      if(!subclassUnlocked()) S.subclass=null;
+      if(S.hpMode==="rolled") classEntries().forEach(resizeHpRolls);
+      const en=classEntries()[0];
+      if(en && !subclassUnlockedOf(en)) S.subclass=null;
       Object.keys(S.asiPicks).forEach(lv=>{ if(+lv>S.level) delete S.asiPicks[lv]; });
     }
     render(); return;

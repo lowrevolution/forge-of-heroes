@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forge of Heroes — Devlog</title>
+<style>
+  /* Palette taken from the generator itself: the deep smoke of the forge,
+     parchment ink, and the two golds the app uses for everything that matters. */
+  :root {
+    --bg-deep:   #100c08;   /* page background, same as the app */
+    --panel:     #1c150e;
+    --panel2:    #241b11;
+    --card:      #2b2013;
+    --ink:       #e8ddc0;
+    --ink-dim:   #b3a887;
+    --gold:      #c9a227;
+    --gold-bright:#ffd75e;
+    --blood:     #8e1c1c;
+    --blood-soft:#4a1d1d;
+    --border-gold:#8a6d1f;
+    --border-dim:#4a3a1c;
+    --ok:        #6fbf5e;
+    --ok-soft:   #24361f;
+    --butter:    #4a3d18;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 28px 56px;
+    background: var(--bg-deep);
+    color: var(--ink);
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1.5;
+  }
+
+  /* The mascot is a pure-CSS d20 — no assets, so the page is one file that
+     works from anywhere. A clipped hexagon for the die, a pseudo-element
+     triangle for the top face, and the twenty sitting where it always lands
+     for the lucky. It rocks gently, the way a die settles. */
+  .d20 {
+    --sz: 58px;
+    width: var(--sz); height: var(--sz);
+    flex: none; position: relative;
+    clip-path: polygon(50% 0, 94% 26%, 94% 74%, 50% 100%, 6% 74%, 6% 26%);
+    background: radial-gradient(circle at 38% 30%, var(--gold-bright), var(--gold) 55%, #7a5f14 90%);
+    animation: settle 3.2s ease-in-out infinite;
+    transform-origin: 50% 88%;
+  }
+  .d20::before {
+    content: ""; position: absolute; inset: 0;
+    clip-path: polygon(50% 12%, 85% 70%, 15% 70%);
+    background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.04) 70%);
+  }
+  .d20::after {
+    content: "20"; position: absolute; inset: 0;
+    display: grid; place-items: center;
+    padding-top: 12%;
+    font: 700 calc(var(--sz) * .30)/1 Georgia, serif;
+    color: #241b0a; letter-spacing: .02em;
+  }
+  @keyframes settle {
+    0%, 100% { transform: rotate(0deg); }
+    30%      { transform: rotate(-3.5deg); }
+    65%      { transform: rotate(2.5deg); }
+  }
+
+  h1 {
+    display: flex; align-items: flex-end; gap: 16px;
+    font-size: 26px; letter-spacing: 4px; margin: 0 0 4px;
+    color: var(--gold-bright);
+    font-variant: small-caps;
+  }
+  .subtitle { color: var(--ink-dim); margin: 0 0 24px; font-size: 14px; font-style: italic; }
+
+  /* ---------- dev stats ---------- */
+  .stats-panel {
+    background: var(--panel);
+    border: 1px solid var(--border-gold);
+    border-radius: 10px;
+    box-shadow: 0 3px 0 rgba(0,0,0,.4);
+    padding: 16px 22px 18px;
+    margin-bottom: 26px;
+  }
+  .stats-panel > h2 {
+    margin: 0 0 12px; font-size: 14px; letter-spacing: 3px; color: var(--gold);
+    font-variant: small-caps;
+  }
+  .tiles {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .tile {
+    background: var(--panel2); border-radius: 8px; padding: 9px 12px;
+    border-left: 3px solid var(--border-gold);
+  }
+  .tile .label { display: block; font-size: 11px; letter-spacing: 1px;
+    color: var(--ink-dim); text-transform: uppercase; }
+  .tile .value { font-size: 21px; font-weight: 700; color: var(--gold-bright); }
+  .tile .value small { font-size: 12px; font-weight: 400; color: var(--ink-dim); }
+
+  .chart { margin-top: 16px; }
+  .chart h3 { margin: 0 0 8px; font-size: 11px; letter-spacing: 2px;
+    color: var(--ink-dim); text-transform: uppercase; }
+  .bar { display: grid; grid-template-columns: 74px 1fr 34px; gap: 8px;
+    align-items: center; margin-bottom: 5px; font-size: 12px; }
+  .bar .track { background: var(--panel2); border-radius: 6px; height: 14px; }
+  /* display:block is load-bearing: the fill is a span, and an inline box
+     ignores width and height outright — see the Brbl devlog for the scar. */
+  .bar .fill { display: block; height: 100%; border-radius: 6px;
+    background: var(--gold); }
+  .bar:nth-child(even) .fill { background: var(--border-gold); }
+  .bar .count { text-align: right; color: var(--ink-dim); }
+  .asof { font-size: 11px; color: var(--ink-dim); margin: 12px 0 0; }
+  code { background: var(--panel2); border-radius: 4px; padding: 1px 6px;
+    font-size: 12px; color: var(--gold-bright); }
+
+  /* ---------- week / day / entry ---------- */
+  .week {
+    background: var(--panel);
+    border: 1px solid var(--border-dim);
+    border-radius: 10px;
+    padding: 18px 22px 10px;
+    margin-bottom: 26px;
+    box-shadow: 0 3px 0 rgba(0,0,0,.4);
+  }
+  .week > h2 { margin: 0 0 2px; font-size: 18px; letter-spacing: 3px;
+    color: var(--gold); font-variant: small-caps; }
+  .week > .week-sum { margin: 0 0 14px; font-size: 13px; color: var(--ink-dim); }
+  .day { margin: 0 0 18px; }
+  .day > h3 {
+    margin: 0 0 10px; font-size: 13px; letter-spacing: 2px;
+    color: var(--ink-dim); text-transform: uppercase;
+    border-bottom: 1px dotted var(--border-dim); padding-bottom: 4px;
+  }
+  .entry {
+    display: grid; grid-template-columns: 72px 84px 1fr;
+    gap: 10px; align-items: baseline;
+    padding: 7px 4px; border-radius: 8px;
+  }
+  .entry:nth-child(even) { background: var(--panel2); }
+  .hash {
+    font-family: Consolas, monospace; font-size: 12px;
+    color: var(--ink-dim); background: var(--card);
+    border: 1px solid var(--border-dim);
+    border-radius: 6px; padding: 1px 7px; text-align: center;
+  }
+  .tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    border-radius: 6px; padding: 1px 0; text-align: center; color: var(--ink);
+  }
+  .tag.feature { background: var(--ok-soft); color: var(--ok); }
+  .tag.polish  { background: var(--card); color: var(--gold-bright); }
+  .tag.fix     { background: var(--blood-soft); color: #e08585; }
+  .tag.tooling { background: var(--butter); color: var(--gold-bright); }
+  .what strong { font-size: 14px; color: var(--gold-bright); }
+  .what p { margin: 2px 0 0; font-size: 13px; color: var(--ink-dim); }
+  .milestone .what strong::after { content: " ✦"; color: var(--gold); }
+</style>
+</head>
+<body>
+
+<h1>
+  <span class="d20"></span>
+  Forge of Heroes — Devlog
+</h1>
+<p class="subtitle">Week-by-week development log, newest first. Significant commits only — merge plumbing and savepoints are left out.</p>
+
+<section class="stats-panel">
+  <h2>Dev Stats</h2>
+  <div id="stats">
+    <p class="asof">No stats yet — run <code>Informational\update_stats.ps1</code> to fill this panel.</p>
+  </div>
+</section>
+
+<section class="week">
+  <h2>Week 2 &middot; Jul 27 &ndash; Aug 2, 2026</h2>
+  <p class="week-sum">The forge learns to make heroes with more than one calling. Multiclassing arrives whole: a class ledger with prerequisite-gated cards, spell slots that pool across classes by the real rules while pact magic stands apart, hit dice that remember which class rolled them, and a character sheet that reads "Fighter 5 / Wizard 3" like it always could. Heroes saved before any of this existed load untouched.</p>
+
+  <div class="day">
+    <h3>Friday, July 31 — day two</h3>
+
+    <div class="entry">
+      <span class="hash">&mdash;</span><span class="tag tooling">TOOLING</span>
+      <span class="what"><strong>This devlog</strong>
+        <p>The page you are reading, plus the stats panel above it. One self-contained
+        file in the generator's own colors — the numbers are written into it rather
+        than fetched, and the d20 is CSS rather than a picture, so it opens from
+        anywhere. The stats come out of the git history and the source itself, and any
+        of them that cannot be worked out simply disappears rather than showing you a
+        zero. From here on, every change to the forge gets an entry.</p></span>
+    </div>
+
+    <div class="entry milestone">
+      <span class="hash">e882017</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>One hero, many callings — multiclassing arrives</strong>
+        <p>The Advancement step becomes a class ledger. Your starting class sits in a
+        row with a level stepper, and beneath it an "Add a class" drawer offers the
+        other twenty-one — each card showing its ability-score prerequisite, and each
+        locked card saying exactly why you don't qualify, so the rule teaches itself.
+        The real rule is enforced in both directions: you need 13s for the class you
+        are entering <em>and</em> for every class you already have. A new class grants
+        only its reduced multiclass proficiencies — never full saves or a second pile
+        of starting equipment — and Bard, Ranger and Rogue dips hand over their one
+        skill pick. Every class keeps its own subclass, chosen at its own level, and
+        its own ability improvements and feats at its own milestones. Character level
+        is the sum, capped at twenty, and proficiency follows it.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">e882017</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>Spell slots that pool; pact magic that doesn't</strong>
+        <p>A lone caster keeps its own slot table, quirks and all. The moment a second
+        slot-caster joins, the slots pool at a combined caster level — full casters
+        count every level, half-casters half (the Artificer rounds up, as is its way),
+        third-casters a third — read off the shared full-caster table. But each class
+        still <em>learns</em> spells as if it stood alone: a Wizard 3 / Cleric 3 has the
+        slots of a sixth-level caster and the spell lists of two third-level ones,
+        which is exactly the trap and the treat the rule intends. Warlock pact magic
+        joins none of this pooling; it stacks its own short-rest slots on top.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">e882017</span><span class="tag polish">POLISH</span>
+      <span class="what"><strong>Old heroes walk into the new rules unharmed</strong>
+        <p>Every character saved before multiclassing existed loads exactly as it was —
+        a single-class hero is simply a ledger with one row. Hit points now remember
+        which class each level came from, rolling the right die for it, and the sheet
+        shows mixed hit dice like 5d10+3d6. The identity line reads the whole story —
+        "Level 8 Human Fighter 5 / Wizard 3 (School of Evocation)" — and the
+        completeness warnings name the class they are nagging you about.</p></span>
+    </div>
+  </div>
+</section>
+
+<section class="week">
+  <h2>Week 1 &middot; Jul 26, 2026</h2>
+  <p class="week-sum">The whole forge is raised in a single Sunday: one HTML file that rolls dice, walks eight steps from ability scores to a printable parchment sheet, and knows the SRD by heart — nine races and twelve classes at first, then ten more callings and the full climb from level 1 to 20 with subclasses, feats and spell slots. By nightfall it has a print stylesheet, a license, and its trademarks filed off.</p>
+
+  <div class="day">
+    <h3>Sunday, July 26 — day one</h3>
+
+    <div class="entry">
+      <span class="hash">ab960c1</span><span class="tag tooling">TOOLING</span>
+      <span class="what"><strong>Licensed, attributed, unbranded</strong>
+        <p>MIT license for the code, proper Creative Commons attribution for the SRD
+        material it draws on, and every trademarked name filed off in favor of the
+        open-content equivalents. The generator stands on the System Reference
+        Documents and says so plainly at the foot of every printed sheet.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">5b6c10a</span><span class="tag polish">POLISH</span>
+      <span class="what"><strong>The sheet prints like a sheet</strong>
+        <p>A real print stylesheet: the dark forge chrome falls away and the character
+        sheet comes out as clean parchment pages, with the nav, buttons and dice tray
+        left behind on the screen where they belong.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">789d17c</span><span class="tag polish">POLISH</span>
+      <span class="what"><strong>Attacks move in under Saving Throws</strong>
+        <p>The sheet's attack table stacks beneath the saving throws so the Features
+        column can breathe. A high-level hero's feature list is the longest thing on
+        the page; it gets the width.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">0ed2d75</span><span class="tag polish">POLISH</span>
+      <span class="what"><strong>Build choices live in Advancement, and drawers stay open</strong>
+        <p>Skills and spells are chosen where levels are chosen, instead of being
+        scattered across steps. And the page remembers which drill-down drawers you
+        had open: the app re-renders wholesale on every change, and before this, each
+        click slammed shut the very section you were working in.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">002f832</span><span class="tag fix">FIX</span>
+      <span class="what"><strong>Subclass cards answer when clicked</strong>
+        <p>The archetype cards looked clickable and were not — the click listener's
+        list of things it cared about simply didn't include them. A Champion could be
+        admired but never chosen.</p></span>
+    </div>
+
+    <div class="entry milestone">
+      <span class="hash">238ae38</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>Levels 1&ndash;20, and ten more callings</strong>
+        <p>The generator stops being a first-level toy. A full advancement engine
+        arrives: experience thresholds, subclasses unlocking at their proper levels,
+        ability score improvements and feats, hit points averaged or rolled, and spell
+        slots that know a full caster from a half, a third, and a warlock. Ten classes
+        beyond the SRD twelve join the roster — Artificer to Pugilist — with
+        progressions, subclasses and spell lists of their own, and the spell
+        compendium grows to cover the levels the slots can now reach.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">918547c</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>A face, a body, and dice you can drag</strong>
+        <p>Rolled ability scores become draggable dice you drop onto abilities — and
+        drop onto an occupied one to swap. The hero gets a body: height, weight, hair,
+        eyes and skin drawn from race-appropriate tables, a portrait you can paste
+        into the sheet, and an attacks table that knows finesse from heavy and
+        proficiency from wishful thinking.</p></span>
+    </div>
+
+    <div class="entry milestone">
+      <span class="hash">3c3d59b</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>The forge lights</strong>
+        <p>Forge of Heroes exists: a fifth-edition-compatible character generator in
+        one HTML file, no build step, no server, nothing to install. Eight steps walk
+        a hero from rolled abilities through race, class, background, equipment and
+        persona to a finished character sheet, with a dice tray in the corner and
+        every choice saved to the browser as it is made. Open the file, roll, play.</p></span>
+    </div>
+  </div>
+</section>
+
+<script>
+// STATS:BEGIN -- rewritten in place by update_stats.ps1; do not edit by hand
+window.DEVLOG_STATS = {
+  "generated": "Jul 31, 2026",
+  "commits": 9,
+  "devDays": 2,
+  "appLoc": 5446,
+  "classes": 22,
+  "races": 19,
+  "spells": 139,
+  "feats": 35,
+  "commitsByWeek": [
+  { "label": "Wk Jul 20", "commits": 8 },
+  { "label": "Wk Jul 27", "commits": 1 }
+  ]
+};
+// STATS:END
+</script>
+<script>
+(function () {
+  const s = window.DEVLOG_STATS;
+  if (!s || s.commits == null) return; // keep the "run update_stats" hint
+  const fmt = n => n == null ? null : n.toLocaleString("en-US");
+  // [label, value] — a null value drops the tile entirely, so a stat the
+  // script could not derive is simply absent rather than shown as a zero.
+  const tiles = [
+    ["Total commits", fmt(s.commits)],
+    ["Days in development", fmt(s.devDays)],
+    ["Lines in the one file", fmt(s.appLoc)],
+    ["Classes", fmt(s.classes)],
+    ["Races", fmt(s.races)],
+    ["Spells", fmt(s.spells)],
+    ["Feats", fmt(s.feats)],
+  ];
+  let html = '<div class="tiles">';
+  for (const [label, value] of tiles) {
+    if (value != null) {
+      html += `<div class="tile"><span class="label">${label}</span>` +
+        `<span class="value">${value}</span></div>`;
+    }
+  }
+  html += "</div>";
+  if (s.commitsByWeek && s.commitsByWeek.length) {
+    const max = Math.max(...s.commitsByWeek.map(w => w.commits));
+    html += '<div class="chart"><h3>Commits by week</h3>';
+    for (const w of s.commitsByWeek) {
+      html += `<div class="bar"><span>${w.label}</span>` +
+        `<span class="track"><span class="fill" style="width: ${Math.round(100 * w.commits / max)}%"></span></span>` +
+        `<span class="count">${w.commits}</span></div>`;
+    }
+    html += "</div>";
+  }
+  html += `<p class="asof">Generated ${s.generated} by update_stats.ps1</p>`;
+  document.getElementById("stats").innerHTML = html;
+})();
+</script>
+
+</body>
+</html>

@@ -316,10 +316,17 @@
 
   /* ============ DRAG & DROP DICE ============ */
   .roll-pool{padding-bottom:16px}
-  .rolled-die{cursor:grab;user-select:none;position:relative}
+  .rolled-die{cursor:grab;user-select:none;position:relative;-webkit-user-select:none;-webkit-touch-callout:none}
   .rolled-die:active{cursor:grabbing}
+  /* draggable dice own their touch gesture outright — without this the browser
+     claims the swipe for scrolling before our touchmove ever runs */
+  .rolled-die[data-die]{touch-action:none}
   .rolled-die.assigned{opacity:.5;border-style:dashed}
   .rolled-die.dragging{opacity:.25}
+  /* the finger-following copy of a die during a touch drag */
+  .rolled-die.touch-ghost{position:fixed;z-index:1000;margin:0;pointer-events:none;
+    transform:translate(-50%,-90%) scale(1.15);opacity:.95;
+    box-shadow:0 6px 18px rgba(0,0,0,.6)}
   .rolled-die .assigned-to{position:absolute;bottom:-16px;left:0;right:0;font-size:.62rem;color:var(--ok);text-align:center;font-variant:small-caps;letter-spacing:.04em}
   .ability-box.drop-ok{border-color:var(--gold-bright);box-shadow:0 0 16px rgba(255,215,94,.4);transform:scale(1.03)}
 
@@ -5504,19 +5511,70 @@ document.addEventListener("dragleave",e=>{
   const box=e.target.closest&&e.target.closest(".ability-box[data-abil]");
   if(box) box.classList.remove("drop-ok");
 });
+/* Assign rolled die `idx` to ability `a`, swapping with any previous owner —
+   shared by the mouse drop handler and the touch fallback below */
+function assignDieTo(idx,a){
+  const prevOwner=ABILITIES.find(x=>x!==a && S.assigned[x]!=="" && S.assigned[x]!=null && +S.assigned[x]===+idx);
+  const displaced=S.assigned[a];
+  S.assigned[a]=String(idx);
+  if(prevOwner) S.assigned[prevOwner]=(displaced!==""&&displaced!=null)?displaced:"";
+  render();
+}
 document.addEventListener("drop",e=>{
   const box=e.target.closest&&e.target.closest(".ability-box[data-abil]");
   if(!box) return;
   e.preventDefault();
   const idx=e.dataTransfer.getData("text/plain");
   if(idx==="") return;
-  const a=box.dataset.abil;
-  const prevOwner=ABILITIES.find(x=>x!==a && S.assigned[x]!=="" && S.assigned[x]!=null && +S.assigned[x]===+idx);
-  const displaced=S.assigned[a];
-  S.assigned[a]=idx;
-  if(prevOwner) S.assigned[prevOwner]=(displaced!==""&&displaced!=null)?displaced:"";
-  render();
+  assignDieTo(idx,box.dataset.abil);
 });
+
+/* ---------- touch fallback: HTML5 drag events never fire on touch ----------
+   A finger drag clones the die into a fixed-position ghost that follows the
+   touch, highlights the ability box under it, and drops with the same swap
+   logic as the mouse path. elementFromPoint skips the ghost because it is
+   pointer-events:none. */
+const TouchDrag={idx:null,ghost:null,box:null};
+function touchDragCleanup(){
+  if(TouchDrag.ghost) TouchDrag.ghost.remove();
+  if(TouchDrag.box) TouchDrag.box.classList.remove("drop-ok");
+  document.querySelectorAll(".rolled-die.dragging").forEach(d=>d.classList.remove("dragging"));
+  TouchDrag.idx=null; TouchDrag.ghost=null; TouchDrag.box=null;
+}
+document.addEventListener("touchstart",e=>{
+  const die=e.target.closest&&e.target.closest(".rolled-die[data-die]");
+  if(!die || TouchDrag.idx!=null) return;
+  const t=e.changedTouches[0];
+  TouchDrag.idx=die.dataset.die;
+  die.classList.add("dragging");
+  const g=die.cloneNode(true);
+  g.classList.remove("dragging","assigned");
+  g.classList.add("touch-ghost");
+  g.removeAttribute("draggable");
+  g.style.left=t.clientX+"px"; g.style.top=t.clientY+"px";
+  document.body.appendChild(g);
+  TouchDrag.ghost=g;
+},{passive:true});
+document.addEventListener("touchmove",e=>{
+  if(TouchDrag.idx==null) return;
+  e.preventDefault();               // the drag owns this gesture, not the scroller
+  const t=e.changedTouches[0];
+  TouchDrag.ghost.style.left=t.clientX+"px"; TouchDrag.ghost.style.top=t.clientY+"px";
+  const under=document.elementFromPoint(t.clientX,t.clientY);
+  const box=(under&&under.closest)?under.closest(".ability-box[data-abil]"):null;
+  if(box!==TouchDrag.box){
+    if(TouchDrag.box) TouchDrag.box.classList.remove("drop-ok");
+    if(box) box.classList.add("drop-ok");
+    TouchDrag.box=box;
+  }
+},{passive:false});
+document.addEventListener("touchend",e=>{
+  if(TouchDrag.idx==null) return;
+  const idx=TouchDrag.idx, box=TouchDrag.box;
+  touchDragCleanup();
+  if(box) assignDieTo(idx,box.dataset.abil);
+});
+document.addEventListener("touchcancel",()=>{ if(TouchDrag.idx!=null) touchDragCleanup(); });
 
 /* =====================================================================
    DICE ROLLER

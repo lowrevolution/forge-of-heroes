@@ -173,6 +173,59 @@
 </section>
 
 <section class="week">
+  <h2>Week 3 &middot; Oct 12 &ndash; 18, 2026</h2>
+  <p class="week-sum">Heroes leave the forge and come back. A character file saves the whole hero and loads them again on any device, a short hand-written one brings a paper character in, and scores can be typed rather than rolled. Then the hero you loaded can grow: a Level Up button on the sheet walks through every choice the next level brings, one step at a time, and Cancel leaves no trace.</p>
+
+  <div class="day">
+    <h3>Monday, October 12</h3>
+
+    <div class="entry milestone">
+      <span class="hash">dfc7a36</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>Level up, one guided step at a time</strong>
+        <p>The character sheet gains a Level Up button that opens a walkthrough
+        over the page. First, which class takes the level: each card names what
+        that class level brings, and a drawer offers new classes with their
+        prerequisites checked against your scores. Then hit points, average or
+        rolled, with the roll landing in the dice tray. After that, only what the
+        level actually asks for: a subclass when one unlocks, an improvement or
+        feat at an ASI level, the multiclass skill, new cantrips and spells. It
+        ends on a before-and-after of level, hit points, proficiency, slots and
+        scores, plus every feature gained. The pickers are the Advancement
+        step's own, so nothing behaves differently in here. Cancel puts the hero
+        back byte for byte, and the saved copy is not touched until Finish.</p>
+        <p>Rolling a level's hit die no longer needs the whole hero to be on
+        rolled hit points: switching mid-career records the average for every
+        earlier level, so past hit points stay exactly where they were.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">dfc7a36</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>Character files: save a hero, load them back</strong>
+        <p>&ldquo;Download JSON&rdquo; is now <em>Save Character File</em>, and it has
+        a partner: Load Character File, on Step I and on the sheet. Loading drops
+        you on the sheet with the Level Up button waiting. Files carry a format
+        tag. Old downloads still load, and so does a short hand-written file using
+        <code>class</code> and <code>abilities</code>, with names matched
+        forgivingly. Anything the forge does not recognise is left out and listed.
+        Since files pass between people, angle brackets are stripped from every
+        string and the portrait must be a real image, so a file cannot put markup
+        on your page.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">dfc7a36</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>Type your scores in</strong>
+        <p>Step I has two tabs now. Roll the dice works as before. Enter scores
+        manually takes six base scores for point buy, the standard array, dice
+        rolled at the table, or a hero copied from paper, and shows the total with
+        racial bonuses as you type, without stealing the cursor. The first switch
+        to typing starts from any dice already placed, and the rolls are kept if
+        you switch back.</p></span>
+    </div>
+  </div>
+</section>
+
+<section class="week">
   <h2>Week 2 &middot; Jul 27 &ndash; Aug 2, 2026</h2>
   <p class="week-sum">The forge learns to make heroes with more than one calling. Multiclassing arrives whole: a class ledger with prerequisite-gated cards, spell slots that pool across classes by the real rules while pact magic stands apart, hit dice that remember which class rolled them, and a character sheet that reads "Fighter 5 / Wizard 3" like it always could. Heroes saved before any of this existed load untouched. The starting kit stops speaking in categories, too: where the book says "any martial weapon", you now say which one.</p>
 

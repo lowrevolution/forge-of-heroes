@@ -22,14 +22,36 @@ Supports characters from **level 1 to 20**, with experience thresholds, hit poin
 
 Eight steps, each with expanding drill-down detail for every choice:
 
-1. **Abilities** — roll 4d6-drop-lowest, then drag each die onto the ability you want it in (drop onto an occupied slot to swap)
+1. **Abilities** — roll 4d6-drop-lowest and drag each die onto the ability you want it in (drop onto an occupied slot to swap), or switch to manual entry and type the scores in (point buy, standard array, table rolls, or a hero copied from paper)
 2. **Race** — full trait text, racial ability bonuses, and sub-choices like draconic ancestry or celestial revelation
 3. **Class** — features, proficiencies, skill picker enforcing class lists, and a level-aware spell picker covering every spell level you can cast
 4. **Advancement** — level and XP (each drives the other), hit points by fixed average or rolled hit dice, subclass selection gated at the correct level, spell slots, and an ability-improvement-or-feat choice at every ASI level
 5. **Background** — skills, tools, equipment, and roleplay features
 6. **Equipment** — class gear choices, armor and shield with live AC, plus a magic item hoard with attunement tracking
 7. **Details** — name, alignment, race-tuned physical description dropdowns with free-text options, personality, and a character art upload
-8. **Character Sheet** — printable parchment sheet computing saves, all 18 skills, attack lines, spell DCs, and every feature gained across all levels
+8. **Character Sheet** — printable parchment sheet computing saves, all 18 skills, attack lines, spell DCs, and every feature gained across all levels, with a **Level Up** button that opens a guided walkthrough
+
+## Character files
+
+**💾 Save Character File** writes the whole hero (scores, classes, every choice, gear, description and portrait) to one `.json` file; **📂 Load Character File** (on Step I and the Character Sheet) brings it back exactly. Files are read in the browser and never uploaded. A short hand-written file also works for bringing in a hero from paper:
+
+```json
+{
+  "name": "Brienne Ashford",
+  "race": "Human",
+  "class": "Fighter",
+  "level": 5,
+  "abilities": { "str": 15, "dex": 13, "con": 14, "int": 8, "wis": 12, "cha": 10 },
+  "background": "Soldier",
+  "alignment": "Lawful Good"
+}
+```
+
+Names are matched forgivingly ("elf" finds "Elf (High)"), anything unknown is left out with a note saying what, and markup in text fields is stripped so a shared file cannot inject anything into the page.
+
+## Leveling up
+
+The **⬆ Level Up** button on the Character Sheet walks through one level at a time: pick the class that gains it (or multiclass, prerequisites checked), take average hit points or roll the die, then only the choices that level brings — subclass, ability improvement or feat, multiclass skill, new spells — and a before/after review. Cancel puts the hero back exactly as they were.
 
 ## Rules engine
 

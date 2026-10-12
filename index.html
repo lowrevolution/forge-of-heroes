@@ -375,6 +375,45 @@
     font-size:.68rem;line-height:1.45;color:#6b5a35;text-align:center;
   }
 
+  /* ============ CHARACTER FILES ============ */
+  .file-strip{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 20px}
+  .file-strip .fs-text{flex:1;min-width:220px;color:var(--ink-dim);font-size:.93rem}
+  .file-strip .fs-text b{color:var(--ink)}
+  .sheet-notice{
+    background:rgba(111,191,94,.08);border:1px solid var(--ok);border-radius:6px;
+    padding:12px 16px;margin-bottom:14px;color:var(--ink);
+  }
+  .sheet-notice ul{padding-left:20px;margin-top:6px;font-size:.9rem;color:var(--ink-dim)}
+  .sheet-notice .sn-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .file-format pre{
+    background:#191208;border:1px solid var(--border-dim);border-radius:5px;padding:10px 12px;
+    font-size:.8rem;color:var(--ink);overflow-x:auto;white-space:pre;
+  }
+
+  /* ============ LEVEL-UP WALKTHROUGH ============ */
+  body.lu-open{overflow:hidden}
+  #lu-modal{
+    position:fixed;inset:0;z-index:150;background:rgba(8,6,3,.82);display:none;
+    align-items:flex-start;justify-content:center;padding:4vh 12px;overflow-y:auto;
+  }
+  #lu-modal.open{display:flex;animation:fadeUp .25s ease}
+  #lu-box{width:min(880px,100%);margin-bottom:4vh}
+  #lu-box:focus{outline:none}
+  .lu-progress{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 16px}
+  .lu-progress span{
+    font-variant:small-caps;letter-spacing:.05em;font-size:.82rem;padding:3px 12px;border-radius:14px;
+    border:1px solid var(--border-dim);color:var(--ink-dim);background:var(--bg-card);
+  }
+  .lu-progress span.done{border-color:var(--ok);color:var(--ok)}
+  .lu-progress span.active{border-color:var(--gold-bright);color:var(--gold-bright);background:#33260f}
+  .lu-gains{margin:8px 0 0 18px;font-size:.84rem;color:var(--ink-dim)}
+  .lu-hp-result{font-size:2.4rem;color:var(--gold-bright);text-align:center;line-height:1.1;margin:10px 0 2px}
+  .lu-diff{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin:10px 0}
+  .lu-diff div{background:var(--bg-card);border:1px solid var(--border-dim);border-radius:6px;padding:10px 12px}
+  .lu-diff .ld-label{font-variant:small-caps;color:var(--ink-dim);font-size:.82rem}
+  .lu-diff .ld-val{font-size:1.15rem;color:var(--ink)}
+  .lu-diff .ld-val b{color:var(--gold-bright)}
+
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-track{background:var(--bg-deep)}
   ::-webkit-scrollbar-thumb{background:var(--border-dim);border-radius:5px}
@@ -389,7 +428,7 @@
     #app{max-width:none;margin:0;padding:0}
     #app>*:not(#step-summary){display:none!important}
     #step-summary{display:block!important}
-    #dice-toggle,#dice-tray,.step-footer,nav.steps,.no-print{display:none!important}
+    #dice-toggle,#dice-tray,#lu-modal,.step-footer,nav.steps,.no-print{display:none!important}
 
     .sheet{box-shadow:none;border:none;background:#fff;color:#000;padding:0;border-radius:0}
     .sheet h2{font-size:15pt;padding-bottom:3px;margin-bottom:2px}
@@ -490,6 +529,10 @@
   <div id="dice-result"><div class="breakdown">The dice await your command…</div></div>
   <div id="dice-log"></div>
 </div>
+
+<!-- character files are read locally with FileReader; nothing is uploaded anywhere -->
+<input type="file" id="charfile-input" accept=".json,application/json" style="display:none">
+<div id="lu-modal" role="dialog" aria-modal="true" aria-label="Level up"><div id="lu-box" tabindex="-1"></div></div>
 
 <script>
 "use strict";
@@ -4507,41 +4550,50 @@ function subclassUI(en){
     +'<div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">'+cards+'</div>'+sd;
 }
 
-function asiUI(en){
+/* One improvement-or-feat choice — shared by the Advancement ledger and the
+   level-up walkthrough, so both write through the same change handlers */
+function asiRowUI(en,L){
   const f=finalScores();
+  const pick=en.asiPicks[L]||{mode:"asi",a1:"",a2:""};
+  const abilSel=(slot,val)=>'<select data-asi-abil="'+L+'" data-ix="'+en.ix+'" data-slot="'+slot+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif)">'
+    +'<option value="">— ability —</option>'
+    +ABILITIES.map(a=>{
+        const cur=f[a];
+        const cap=cur>=20&&val!==a;
+        return '<option value="'+a+'"'+(val===a?' selected':'')+(cap?' disabled':'')+'>'+ABILITY_INFO[a].name+' ('+cur+')'+(cap?' — at maximum':'')+'</option>';
+      }).join('')+'</select>';
+  const featOpts='<select data-asi-feat="'+L+'" data-ix="'+en.ix+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif);max-width:100%">'
+    +'<option value="">— choose a feat —</option>'
+    +Object.keys(FEATS).sort().map(fn=>'<option'+(pick.feat===fn?' selected':'')+'>'+fn+'</option>').join('')+'</select>';
+  const featInfo=(pick.mode==="feat"&&pick.feat&&FEATS[pick.feat])
+    ? '<div class="trait" style="margin-top:6px"><b>'+pick.feat+'.</b> <span class="t-desc">'+FEATS[pick.feat].d
+      +(FEATS[pick.feat].prereq?' <i>Prerequisite: '+FEATS[pick.feat].prereq+'.</i>':'')+'</span></div>'
+      +(Array.isArray(FEATS[pick.feat].asi)
+        ? '<div style="margin-top:4px">This feat also raises one ability by 1: <select data-asi-featabil="'+L+'" data-ix="'+en.ix+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:4px;font-family:var(--serif)"><option value="">— choose —</option>'
+          +FEATS[pick.feat].asi.map(a=>'<option value="'+a+'"'+(pick.featAbil===a?' selected':'')+'>'+ABILITY_INFO[a].name+'</option>').join('')+'</select></div>'
+        : (typeof FEATS[pick.feat].asi==="string"?'<div style="margin-top:4px;color:var(--ok);font-size:.85rem">Also grants +1 '+ABILITY_INFO[FEATS[pick.feat].asi].name+'</div>':''))
+    : "";
+  return '<div style="border:1px solid var(--border-dim);border-radius:6px;padding:12px 14px;margin:8px 0;background:rgba(0,0,0,.2)">'
+    +'<b style="color:var(--gold);font-variant:small-caps;letter-spacing:.05em">'+(isMulticlassed()?en.name+' level ':'Level ')+L+'</b>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;align-items:center">'
+    +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+en.ix+'-'+L+'" data-asi-mode="'+L+'" data-ix="'+en.ix+'" value="asi"'+(pick.mode!=="feat"?" checked":"")+' style="accent-color:var(--gold)"> Ability Score Improvement</label>'
+    +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+en.ix+'-'+L+'" data-asi-mode="'+L+'" data-ix="'+en.ix+'" value="feat"'+(pick.mode==="feat"?" checked":"")+' style="accent-color:var(--gold)"> Take a Feat</label>'
+    +'</div>'
+    +'<div style="margin-top:8px">'
+    +(pick.mode==="feat" ? featOpts+featInfo
+      : '<span style="color:var(--ink-dim);font-size:.9rem">Raise two abilities by 1 each, or pick the same twice for +2 (maximum 20): </span><br>'+abilSel(1,pick.a1)+' '+abilSel(2,pick.a2))
+    +'</div></div>';
+}
+function asiPickComplete(en,L){
+  const p=en.asiPicks[L];
+  if(!p) return false;
+  if(p.mode==="feat") return !!(p.feat && FEATS[p.feat] && (!Array.isArray(FEATS[p.feat].asi) || p.featAbil));
+  return !!(p.a1 && p.a2);
+}
+function asiUI(en){
   const avail=availableASIsOf(en), all=asiLevelsOf(en);
   if(!all.length) return "";
-  const rows=avail.map(L=>{
-    const pick=en.asiPicks[L]||{mode:"asi",a1:"",a2:""};
-    const abilSel=(slot,val)=>'<select data-asi-abil="'+L+'" data-ix="'+en.ix+'" data-slot="'+slot+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif)">'
-      +'<option value="">— ability —</option>'
-      +ABILITIES.map(a=>{
-          const cur=f[a];
-          const cap=cur>=20&&val!==a;
-          return '<option value="'+a+'"'+(val===a?' selected':'')+(cap?' disabled':'')+'>'+ABILITY_INFO[a].name+' ('+cur+')'+(cap?' — at maximum':'')+'</option>';
-        }).join('')+'</select>';
-    const featOpts='<select data-asi-feat="'+L+'" data-ix="'+en.ix+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:5px;font-family:var(--serif);max-width:100%">'
-      +'<option value="">— choose a feat —</option>'
-      +Object.keys(FEATS).sort().map(fn=>'<option'+(pick.feat===fn?' selected':'')+'>'+fn+'</option>').join('')+'</select>';
-    const featInfo=(pick.mode==="feat"&&pick.feat&&FEATS[pick.feat])
-      ? '<div class="trait" style="margin-top:6px"><b>'+pick.feat+'.</b> <span class="t-desc">'+FEATS[pick.feat].d
-        +(FEATS[pick.feat].prereq?' <i>Prerequisite: '+FEATS[pick.feat].prereq+'.</i>':'')+'</span></div>'
-        +(Array.isArray(FEATS[pick.feat].asi)
-          ? '<div style="margin-top:4px">This feat also raises one ability by 1: <select data-asi-featabil="'+L+'" data-ix="'+en.ix+'" style="background:#191208;color:var(--ink);border:1px solid var(--border-gold);border-radius:4px;padding:4px;font-family:var(--serif)"><option value="">— choose —</option>'
-            +FEATS[pick.feat].asi.map(a=>'<option value="'+a+'"'+(pick.featAbil===a?' selected':'')+'>'+ABILITY_INFO[a].name+'</option>').join('')+'</select></div>'
-          : (typeof FEATS[pick.feat].asi==="string"?'<div style="margin-top:4px;color:var(--ok);font-size:.85rem">Also grants +1 '+ABILITY_INFO[FEATS[pick.feat].asi].name+'</div>':''))
-      : "";
-    return '<div style="border:1px solid var(--border-dim);border-radius:6px;padding:12px 14px;margin:8px 0;background:rgba(0,0,0,.2)">'
-      +'<b style="color:var(--gold);font-variant:small-caps;letter-spacing:.05em">'+(isMulticlassed()?en.name+' level ':'Level ')+L+'</b>'
-      +'<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;align-items:center">'
-      +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+en.ix+'-'+L+'" data-asi-mode="'+L+'" data-ix="'+en.ix+'" value="asi"'+(pick.mode!=="feat"?" checked":"")+' style="accent-color:var(--gold)"> Ability Score Improvement</label>'
-      +'<label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="radio" name="asimode'+en.ix+'-'+L+'" data-asi-mode="'+L+'" data-ix="'+en.ix+'" value="feat"'+(pick.mode==="feat"?" checked":"")+' style="accent-color:var(--gold)"> Take a Feat</label>'
-      +'</div>'
-      +'<div style="margin-top:8px">'
-      +(pick.mode==="feat" ? featOpts+featInfo
-        : '<span style="color:var(--ink-dim);font-size:.9rem">Raise two abilities by 1 each, or pick the same twice for +2 (maximum 20): </span><br>'+abilSel(1,pick.a1)+' '+abilSel(2,pick.a2))
-      +'</div></div>';
-  }).join('');
+  const rows=avail.map(L=>asiRowUI(en,L)).join('');
   const upcoming=all.filter(L=>L>en.level);
   return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">Ability Score Improvements &amp; Feats</h3>'
     +'<div class="rules-note">'+en.name+' gains an improvement at '+(isMulticlassed()?en.name+' levels ':'levels ')+'<b>'+all.join(", ")+'</b>. Each may be spent on +2 to one ability, +1 to two abilities, or a feat. No ability may exceed 20.</div>'
@@ -4698,10 +4750,14 @@ function renderAdvancement(){
 /* =====================================================================
    APPLICATION STATE & ENGINE
 ===================================================================== */
-const S = {
+/* A blank hero. S starts as one; loading a character file resets to one
+   before applying the file, so nothing from the previous hero leaks through. */
+function freshState(){ return {
   step:0,
+  statMode:"roll",   // "roll": dice dragged onto abilities · "manual": scores typed in
   rolled:[],
   assigned:{str:"",dex:"",con:"",int:"",wis:"",cha:""},   // rolled-die index per ability
+  manual:{str:"",dex:"",con:"",int:"",wis:"",cha:""},     // typed base scores (before racial/ASI)
   body:{hair:"",eyes:"",skin:"",height:"",weight:"",notes:""},
   art:null,
   halfElf:["",""],
@@ -4713,7 +4769,9 @@ const S = {
   background:null,
   equip:{}, equipPicks:{}, armor:null, shield:false, items:[],
   name:"", alignment:"", persona:{traits:"",ideals:"",bonds:"",flaws:""}
-};
+}; }
+const S = freshState();
+const MANUAL_MIN=1, MANUAL_MAX=20;
 
 const STEPS = [
   {id:"abilities",title:"I. Abilities"},
@@ -4730,10 +4788,18 @@ const STEPS = [
 function baseScores(){
   const out={};
   for(const a of ABILITIES){
+    if(S.statMode==="manual"){ out[a]=manualScore(a)||0; continue; }
     const i=S.assigned[a];
     out[a]=(i===""||i==null)?0:(S.rolled[+i]||0);
   }
   return out;
+}
+/* A typed score, or null while the box is blank or holds nonsense */
+function manualScore(a){
+  const v=S.manual[a];
+  if(v===""||v==null) return null;
+  const n=Math.round(+v);
+  return (isFinite(n)&&n>=MANUAL_MIN&&n<=MANUAL_MAX)?n:null;
 }
 function racialBonus(){
   const b={str:0,dex:0,con:0,int:0,wis:0,cha:0};
@@ -4752,6 +4818,7 @@ function finalScores(){
   return out;
 }
 function abilitiesDone(){
+  if(S.statMode==="manual") return ABILITIES.every(a=>manualScore(a)!=null);
   return S.rolled.length===6 && ABILITIES.every(a=>S.assigned[a]!==""&&S.assigned[a]!=null);
 }
 function grantedSkills(){
@@ -4831,6 +4898,15 @@ function renderNav(){
 }
 
 /* ---------- Step 1: Abilities ---------- */
+/* Live total under a typed score. Typing patches this in place rather than
+   re-rendering, which would steal focus from the box being typed in. */
+function manualModHTML(a){
+  const v=S.manual[a];
+  if(v===""||v==null) return '<span style="color:var(--ink-dim);font-size:.85rem">type a score</span>';
+  if(manualScore(a)==null) return '<span style="color:var(--blood-bright);font-size:.85rem">'+MANUAL_MIN+'–'+MANUAL_MAX+' only</span>';
+  const total=finalScores()[a];
+  return 'Score <b>'+total+'</b> · mod <b>'+fmtMod(mod(total))+'</b>';
+}
 function renderAbilities(){
   const f=finalScores(), rb=racialBonus();
   const abilOfIdx=i=>ABILITIES.find(a=>S.assigned[a]!=="" && S.assigned[a]!=null && +S.assigned[a]===i);
@@ -4842,8 +4918,17 @@ function renderAbilities(){
       }).join('')
     : '<span style="color:var(--ink-dim);font-style:italic">No dice cast yet — roll to forge your fate…</span>';
 
+  const manual=S.statMode==="manual";
   const boxes=ABILITIES.map(a=>{
     const info=ABILITY_INFO[a], cur=S.assigned[a];
+    if(manual){
+      return '<div class="ability-box" data-manual-box="'+a+'">'
+        +'<div class="ab-name">'+info.name+'</div><div class="ab-desc">'+info.desc+'</div>'
+        +'<input type="number" inputmode="numeric" min="'+MANUAL_MIN+'" max="'+MANUAL_MAX+'" step="1" data-manual="'+a+'" value="'+(S.manual[a]===""||S.manual[a]==null?"":S.manual[a])+'" placeholder="—" aria-label="'+info.name+' base score">'
+        +'<div class="ab-mod">'+manualModHTML(a)+'</div>'
+        +'<div class="ab-race">'+(rb[a]?('+'+rb[a]+' racial'):'')+'</div>'
+        +'</div>';
+    }
     const opts=[];
     S.rolled.forEach((v,i)=>{
       const owner=abilOfIdx(i);
@@ -4858,12 +4943,23 @@ function renderAbilities(){
       +'</div>';
   }).join('');
 
+  const tabs='<div class="method-tabs" role="tablist">'
+    +'<button role="tab" aria-selected="'+!manual+'" class="'+(manual?'':'active')+'" data-act="stat-mode" data-mode="roll">🎲 Roll the dice</button>'
+    +'<button role="tab" aria-selected="'+manual+'" class="'+(manual?'active':'')+'" data-act="stat-mode" data-mode="manual">✍ Enter scores manually</button>'
+    +'</div>';
+  const methodUI=manual
+    ? '<div class="rules-note"><b>Entering scores by hand:</b> type each <b>base score</b> ('+MANUAL_MIN+'–'+MANUAL_MAX+') — the number <i>before</i> racial bonuses and level-up improvements, which the forge adds for you. '
+      +'Use this for point buy, the standard array (15, 14, 13, 12, 10, 8), dice rolled at the table, or a hero you are copying from paper.</div>'
+    : '<div class="rules-note"><b>Rolling for scores:</b> roll 4d6 and drop the lowest die, six times. Then <b>drag each die onto the ability</b> where you want it — drop onto an occupied ability to swap. (The dropdowns work too.)</div>'
+      +'<button class="btn gold" data-act="roll-abilities">🎲 Roll 4d6 (drop lowest) × 6</button>'
+      +'<div class="roll-pool">'+diceUI+'</div>';
+
   $("step-abilities").innerHTML=
-    '<div class="panel"><h2><span class="ornament">⚔</span> Roll Ability Scores</h2>'
+    '<div class="panel file-strip"><span class="fs-text"><b>Returning hero?</b> Load a character file you saved from the forge earlier and pick up right where you left off — or level them up.</span>'
+    +'<button class="btn" data-act="load-file">📂 Load Character File</button></div>'
+    +'<div class="panel"><h2><span class="ornament">⚔</span> Ability Scores</h2>'
     +'<p class="lede">Six abilities define every adventurer: Strength, Dexterity, Constitution, Intelligence, Wisdom, and Charisma. Your modifier is (score − 10) ÷ 2, rounded down.</p>'
-    +'<div class="rules-note"><b>Rolling for scores:</b> roll 4d6 and drop the lowest die, six times. Then <b>drag each die onto the ability</b> where you want it — drop onto an occupied ability to swap. (The dropdowns work too.)</div>'
-    +'<button class="btn gold" data-act="roll-abilities">🎲 Roll 4d6 (drop lowest) × 6</button>'
-    +'<div class="roll-pool">'+diceUI+'</div>'
+    +tabs+methodUI
     +'<div class="ability-grid">'+boxes+'</div>'
     +(S.race?'<div class="rules-note">Racial bonuses from <b>'+S.race+'</b> are shown in green and included in the totals.</div>':'')
     +drill("📖 Rules: ability checks, saves & modifiers",
@@ -5375,15 +5471,30 @@ function renderSummary(){
     sheet='<div class="rules-note">Choose at least a race and a class to see your character sheet.</div>';
   }
 
+  const canLevel=!!S.klass && totalLevel()<MAX_LEVEL;
+  const levelBtn=canLevel
+    ? '<button class="btn gold" data-act="level-up" title="Walk through gaining level '+(totalLevel()+1)+'">⬆ Level Up to '+(totalLevel()+1)+'</button>' : '';
+  let notice="";
+  if(SHEET_NOTE){
+    notice='<div class="sheet-notice no-print">'+SHEET_NOTE.html
+      +(SHEET_NOTE.warnings&&SHEET_NOTE.warnings.length?'<ul>'+SHEET_NOTE.warnings.map(w=>'<li>'+w+'</li>').join('')+'</ul>':'')
+      +'<div class="sn-actions">'+(SHEET_NOTE.offerLevel&&canLevel?levelBtn:'')
+      +'<button class="btn" data-act="dismiss-note">Dismiss</button></div></div>';
+  }
+
   $("step-summary").innerHTML=
     '<div class="panel no-print" style="margin-bottom:14px"><h2><span class="ornament">🏆</span> The Finished Hero</h2>'
-    +'<p class="lede">Review the completed character sheet below. Print it, or save it as JSON to keep or import elsewhere.</p>'
+    +'<p class="lede">Review the completed character sheet below. Print it, save it as a character file to keep or load again later, or level your hero up.</p>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap">'
+    +levelBtn
     +'<button class="btn gold" data-act="print">🖨 Print Sheet</button>'
-    +'<button class="btn" data-act="download">💾 Download JSON</button>'
+    +'<button class="btn" data-act="download">💾 Save Character File</button>'
+    +'<button class="btn" data-act="load-file">📂 Load Character File</button>'
     +'<button class="btn" data-act="reset" title="Start a brand new character">☠ Start Over</button>'
-    +'</div></div>'
-    +warn+sheet
+    +'</div>'
+    +drill("📜 What is a character file?", characterFileHelp(), false, "charfile-help")
+    +'</div>'
+    +notice+warn+sheet
     +'<div class="step-footer no-print"><button class="btn" data-goto="6">◂ Details</button><span></span></div>';
 }
 
@@ -5395,35 +5506,234 @@ function render(){
   const y=window.scrollY;
   renderNav();
   RENDERERS[S.step]();
-  save();
+  // mid-walkthrough the hero is half-levelled: keep the last whole hero on
+  // disk until Finish, and redraw the walkthrough over the page
+  if(LU) luRender(); else save();
   // re-rendering replaces the DOM wholesale; keep the reader where they were
   if(y) window.scrollTo(0,y);
 }
 function save(){ try{ localStorage.setItem("forge-of-heroes", JSON.stringify(S)); }catch(e){} }
+/* Bring any saved hero up to the current shape: fill fields added since it was
+   saved, and coerce types so a hand-edited file cannot hand the renderers a
+   string where they expect a number. Shared by localStorage and character files. */
+function migrateState(d){
+  const arr=v=>Array.isArray(v)?v:[], obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const int=(v,lo,hi,dflt)=>{ const n=Math.round(+v); return (v!==""&&v!=null&&isFinite(n))?Math.max(lo,Math.min(hi,n)):dflt; };
+  const blankAbils=()=>({str:"",dex:"",con:"",int:"",wis:"",cha:""});
+  delete d.method; delete d.pb;
+  d.assigned=Object.assign(blankAbils(),obj(d.assigned));
+  // migrate pre-drag-and-drop saves that stored scores instead of die indices
+  if(Object.values(d.assigned).some(v=>+v>5)) d.assigned=blankAbils();
+  d.rolled=arr(d.rolled).map(v=>int(v,1,30,null)).filter(v=>v!=null).slice(0,6);
+  d.statMode=d.statMode==="manual"?"manual":"roll";
+  const man=obj(d.manual); d.manual=blankAbils();
+  ABILITIES.forEach(a=>{ d.manual[a]=int(man[a],0,99,""); });
+  d.body=Object.assign({hair:"",eyes:"",skin:"",height:"",weight:"",notes:""},obj(d.body));
+  d.persona=Object.assign({traits:"",ideals:"",bonds:"",flaws:""},obj(d.persona));
+  d.level=int(d.level,1,MAX_LEVEL,1);
+  d.xp=int(d.xp,0,1e9,0);
+  d.asiPicks=obj(d.asiPicks);
+  d.hpRolls=arr(d.hpRolls).map(v=>int(v,1,12,1));
+  if(d.hpMode!=="rolled") d.hpMode="average";
+  d.items=arr(d.items); d.equip=obj(d.equip); d.equipPicks=obj(d.equipPicks);
+  d.skills=arr(d.skills); d.cantrips=arr(d.cantrips); d.spells1=arr(d.spells1);
+  d.raceChoices=obj(d.raceChoices); d.classChoices=obj(d.classChoices);
+  d.halfElf=arr(d.halfElf).concat(["",""]).slice(0,2);
+  if(d.subclass===undefined) d.subclass=null;
+  // migrate single-class saves and sanitize multiclass entries
+  d.multi=arr(d.multi).filter(m=>m && CLASSES[m.name]).map(m=>{
+    const o=Object.assign({name:"",level:1,subclass:null,skills:[],cantrips:[],spells:[],asiPicks:{},hpRolls:[]},m);
+    o.level=int(o.level,1,MAX_LEVEL,1);
+    o.skills=arr(o.skills); o.cantrips=arr(o.cantrips); o.spells=arr(o.spells);
+    o.hpRolls=arr(o.hpRolls).map(v=>int(v,1,12,1)); o.asiPicks=obj(o.asiPicks);
+    return o;
+  });
+  d.step=int(d.step,0,STEPS.length-1,0);
+  return d;
+}
 function load(){
   try{
     const raw=localStorage.getItem("forge-of-heroes");
-    if(raw){
-      const d=JSON.parse(raw);
-      delete d.method; delete d.pb;
-      // migrate pre-drag-and-drop saves that stored scores instead of die indices
-      if(d.assigned && Object.values(d.assigned).some(v=>+v>5)) d.assigned={str:"",dex:"",con:"",int:"",wis:"",cha:""};
-      if(!d.body) d.body={hair:"",eyes:"",skin:"",height:"",weight:"",notes:""};
-      if(!d.level) d.level=1;
-      if(d.xp==null) d.xp=0;
-      if(!d.asiPicks) d.asiPicks={};
-      if(!d.hpRolls) d.hpRolls=[];
-      if(!d.hpMode) d.hpMode="average";
-      if(!d.items) d.items=[];
-      if(!d.equipPicks) d.equipPicks={};
-      if(d.subclass===undefined) d.subclass=null;
-      // migrate single-class saves and sanitize multiclass entries
-      if(!Array.isArray(d.multi)) d.multi=[];
-      d.multi=d.multi.filter(m=>m && CLASSES[m.name])
-        .map(m=>Object.assign({name:"",level:1,subclass:null,skills:[],cantrips:[],spells:[],asiPicks:{},hpRolls:[]},m));
-      Object.assign(S,d);
-    }
+    if(raw) Object.assign(S,migrateState(JSON.parse(raw)));
   }catch(e){}
+}
+/* Swap the whole hero for another, starting from a blank so no field of the
+   old one survives */
+function replaceState(d){
+  Object.keys(S).forEach(k=>delete S[k]);
+  Object.assign(S,freshState(),d);
+}
+
+/* =====================================================================
+   CHARACTER FILES — save a hero to a .json file and load one back.
+   Files are read in the browser with FileReader; nothing is uploaded.
+===================================================================== */
+const CHAR_FILE_FORMAT="forge-of-heroes/character";
+const CHAR_FILE_VERSION=1;
+let SHEET_NOTE=null;   // transient banner on the sheet after a load or level-up; never saved
+
+function characterFileData(){
+  return {format:CHAR_FILE_FORMAT, version:CHAR_FILE_VERSION,
+    meta:"Forge of Heroes — fifth-edition-compatible character (built on the open SRD)",
+    savedAt:new Date().toISOString(),
+    // everything below "character" is a read-only digest for other tools; loading ignores it
+    character:S,
+    level:totalLevel(),classes:classEntries().map(en=>({name:en.name,level:en.level,subclass:en.subclass})),
+    finalScores:finalScores(),
+    ac:computeAC(),hp:computeHP(),proficiencyBonus:profBonus(),
+    spellSlots:combinedSlotTable(),pactMagic:pactSlotsAll(),features:allFeatures(),feats:chosenFeats()};
+}
+
+/* Find a table key by name, forgiving case and an unambiguous prefix, so a
+   hand-written "elf" still finds "Elf (High)" */
+function matchKey(keys,name){
+  if(typeof name!=="string"||!name.trim()) return null;
+  const n=name.trim().toLowerCase();
+  const exact=keys.find(k=>k.toLowerCase()===n);
+  if(exact) return exact;
+  const pre=keys.filter(k=>k.toLowerCase().startsWith(n));
+  return pre.length===1?pre[0]:null;
+}
+
+/* Turn parsed JSON into {state, warnings}. Accepts the forge's own character
+   file (hero under "character"), a bare saved hero, or a short hand-written
+   file using "class" and "abilities". Throws when it is not a character. */
+function parseCharacterFile(raw){
+  if(!raw||typeof raw!=="object"||Array.isArray(raw)) throw new Error("it does not contain a character.");
+  if(raw.format && raw.format!==CHAR_FILE_FORMAT) throw new Error("it is a \""+String(raw.format).replace(/[<>]/g,"")+"\" file, not a Forge of Heroes character.");
+  const src=(raw.character&&typeof raw.character==="object")?raw.character:raw;
+  const d=JSON.parse(JSON.stringify(src));   // detached copy
+  const warnings=[];
+
+  // friendly aliases for hand-written files
+  if(d.klass==null && d["class"]!=null) d.klass=d["class"];
+  delete d["class"];
+  const typed=d.abilities||d.scores;
+  if(typed && typeof typed==="object"){
+    const low={};
+    Object.keys(typed).forEach(k=>{ low[k.toLowerCase()]=typed[k]; });
+    d.statMode="manual"; d.manual={};
+    ABILITIES.forEach(a=>{
+      const v=(a in low)?low[a]:low[ABILITY_INFO[a].name.toLowerCase()];
+      d.manual[a]=(v==null)?"":v;
+    });
+  }
+  delete d.abilities; delete d.scores;
+  if(d.xp==null && d.level) d.xp=xpForLevel(+d.level||1);
+
+  if(!["name","race","klass","rolled","manual","multi","background"].some(k=>d[k]!=null&&d[k]!==""))
+    throw new Error("it does not look like a character — no name, race, class, or ability scores were found.");
+
+  // Character files travel between people, so no string from one may carry
+  // markup into the page. Angle brackets go; everything else is kept.
+  const clean=v=>{
+    if(typeof v==="string") return v.replace(/[<>]/g,"");
+    if(Array.isArray(v)) return v.map(clean);
+    if(v&&typeof v==="object"){ const o={}; for(const k in v){ if(k!=="__proto__"&&k!=="constructor"&&k!=="prototype") o[clean(k)]=clean(v[k]); } return o; }
+    return v;
+  };
+  const art=d.art; delete d.art;
+  const out=migrateState(clean(d));
+  out.art=null;
+  if(typeof art==="string" && /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+\/=\s]+$/.test(art)) out.art=art;
+  else if(art) warnings.push("The portrait in the file was not a PNG or JPEG image and was left out.");
+
+  // names must resolve to something the forge knows, or the renderers would trip
+  const fix=(field,keys,label,step)=>{
+    if(!out[field]) { out[field]=field==="alignment"?"":null; return; }
+    const k=matchKey(keys,out[field]);
+    if(!k){ warnings.push("Unknown "+label+" “"+out[field]+"” — choose one in Step "+step+"."); out[field]=field==="alignment"?"":null; }
+    else out[field]=k;
+  };
+  fix("race",Object.keys(RACES),"race","II");
+  fix("klass",Object.keys(CLASSES),"class","III");
+  fix("background",Object.keys(BACKGROUNDS),"background","V");
+  fix("alignment",ALIGNMENTS.map(x=>x[0]),"alignment","VII");
+  if(out.armor && !ARMOR[out.armor]) out.armor=null;
+  if(typeof out.name!=="string") out.name="";
+
+  const subOK=(cls,sub)=>{
+    if(!sub) return null;
+    const si=SUBCLASSES[cls]; const k=si?matchKey(Object.keys(si.options),sub):null;
+    if(!k) warnings.push("Unknown "+((si&&si.label)||"subclass")+" “"+sub+"” for "+cls+" — choose one in Step IV.");
+    return k;
+  };
+  if(!out.klass){ out.subclass=null; out.multi=[]; }
+  else out.subclass=subOK(out.klass,out.subclass);
+  const seen=new Set([out.klass]);
+  out.multi=out.multi.filter(m=>{
+    const k=matchKey(Object.keys(CLASSES),m.name);
+    if(!k||seen.has(k)) return false;
+    seen.add(k); m.name=k; m.subclass=subOK(k,m.subclass); return true;
+  });
+  let total=(out.klass?out.level:0)+out.multi.reduce((a,m)=>a+m.level,0);
+  if(total>MAX_LEVEL){
+    warnings.push("Class levels added up to "+total+"; trimmed to the level "+MAX_LEVEL+" maximum.");
+    while(total>MAX_LEVEL && out.multi.length){
+      const m=out.multi[out.multi.length-1], cut=Math.min(total-MAX_LEVEL,m.level);
+      m.level-=cut; total-=cut;
+      if(m.level<1) out.multi.pop();
+    }
+  }
+
+  // drop anything the tables do not know, and say how much went
+  let dropped=0;
+  const keep=(list,ok)=>list.filter(x=>{ const y=typeof x==="string"&&ok(x); if(!y) dropped++; return y; });
+  out.skills=keep(out.skills,s=>s in SKILLS);
+  out.cantrips=keep(out.cantrips,s=>s in SPELLS);
+  out.spells1=keep(out.spells1,s=>s in SPELLS);
+  out.items=keep(out.items,s=>s in MAGIC_ITEMS);
+  out.multi.forEach(m=>{ m.skills=keep(m.skills,s=>s in SKILLS); m.cantrips=keep(m.cantrips,s=>s in SPELLS); m.spells=keep(m.spells,s=>s in SPELLS); });
+  [out.asiPicks,...out.multi.map(m=>m.asiPicks)].forEach(ap=>{
+    Object.keys(ap).forEach(L=>{
+      const p=ap[L];
+      if(!p||typeof p!=="object"||(p.mode==="feat"&&p.feat&&!FEATS[p.feat])){ delete ap[L]; dropped++; }
+    });
+  });
+  if(dropped) warnings.push(dropped+" skill, spell, item, or feat name"+(dropped===1?"":"s")+" in the file did not match anything in the forge and "+(dropped===1?"was":"were")+" left out.");
+  if(!abilitiesDoneFor(out)) warnings.push("Ability scores are incomplete — enter them in Step I.");
+  return {state:out,warnings};
+}
+function abilitiesDoneFor(d){
+  if(d.statMode==="manual") return ABILITIES.every(a=>{ const n=+d.manual[a]; return d.manual[a]!==""&&n>=MANUAL_MIN&&n<=MANUAL_MAX; });
+  return d.rolled.length===6 && ABILITIES.every(a=>d.assigned[a]!==""&&d.assigned[a]!=null);
+}
+function heroInProgress(){
+  return !!(S.name||S.race||S.klass||S.rolled.length||ABILITIES.some(a=>S.manual[a]!==""));
+}
+function importCharacterFile(file){
+  if(file.size>16*1024*1024){ alert("That file is far too large to be a character file."); return; }
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let parsed;
+    try{ parsed=parseCharacterFile(JSON.parse(rd.result)); }
+    catch(err){
+      alert("That character file could not be loaded: "+(err instanceof SyntaxError?"it is not valid JSON.":err.message));
+      return;
+    }
+    const who=parsed.state.name||"this character";
+    if(heroInProgress() && !confirm("Load "+who+"? This replaces the hero currently on the forge — save them as a character file first if you want to keep them.")) return;
+    replaceState(parsed.state);
+    S.step=STEPS.length-1;
+    const lvl=S.klass?"level "+totalLevel()+" "+classEntries().map(en=>en.name).join(" / "):"no class yet";
+    SHEET_NOTE={
+      html:'📜 <b>'+(S.name||"Unnamed hero")+'</b> ('+lvl+') loaded from <i>'+file.name.replace(/[<>]/g,"")+'</i>.'
+        +(S.klass&&totalLevel()<MAX_LEVEL?' Ready for the next level? The walkthrough takes you through every choice it brings.':''),
+      warnings:parsed.warnings, offerLevel:true};
+    render(); window.scrollTo({top:0,behavior:"smooth"});
+  };
+  rd.onerror=()=>alert("That file could not be read.");
+  rd.readAsText(file);
+}
+function characterFileHelp(){
+  const sample=JSON.stringify({name:"Brienne Ashford",race:"Human","class":"Fighter",level:5,
+    abilities:{str:15,dex:13,con:14,int:8,wis:12,cha:10},background:"Soldier",alignment:"Lawful Good"},null,2);
+  return '<div class="file-format">'
+    +'<p>A <b>character file</b> is your whole hero — scores, race, classes and levels, every choice, gear, description, and portrait — saved as one small <code>.json</code> file. '
+    +'<b>💾 Save Character File</b> writes it; <b>📂 Load Character File</b> brings it back exactly as it was, on this device or any other.</p>'
+    +'<p>The file is read right here in your browser. It is never uploaded anywhere.</p>'
+    +'<p>You can also write a short one by hand to bring in a hero from paper. Anything left out can be filled in on the steps afterwards. Ability scores here are <i>base</i> scores, before racial bonuses:</p>'
+    +'<pre>'+sample+'</pre></div>';
 }
 
 function roll4d6dl(){
@@ -5513,13 +5823,20 @@ document.addEventListener("click",e=>{
   if(t.dataset.act==="art-clear"){ S.art=null; render(); return; }
   if(t.dataset.act==="art-pick"){ $("art-file").click(); return; }
   if(t.dataset.act==="print"){ window.print(); return; }
+  if(t.dataset.act==="stat-mode"){
+    const m=t.dataset.mode==="manual"?"manual":"roll";
+    // the first switch to typing starts from whatever dice are already placed
+    if(m==="manual" && ABILITIES.every(a=>S.manual[a]==="")){
+      const b=baseScores();
+      ABILITIES.forEach(a=>{ if(b[a]) S.manual[a]=b[a]; });
+    }
+    S.statMode=m; render(); return;
+  }
+  if(t.dataset.act==="load-file"){ const inp=$("charfile-input"); inp.value=""; inp.click(); return; }
+  if(t.dataset.act==="level-up"){ luOpen(); return; }
+  if(t.dataset.act==="dismiss-note"){ SHEET_NOTE=null; render(); return; }
   if(t.dataset.act==="download"){
-    const data={meta:"Forge of Heroes — fifth-edition-compatible character (built on the open SRD)",
-      level:totalLevel(),classes:classEntries().map(en=>({name:en.name,level:en.level,subclass:en.subclass})),
-      character:S,finalScores:finalScores(),
-      ac:computeAC(),hp:computeHP(),proficiencyBonus:profBonus(),
-      spellSlots:combinedSlotTable(),pactMagic:pactSlotsAll(),features:allFeatures(),feats:chosenFeats()};
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const blob=new Blob([JSON.stringify(characterFileData(),null,2)],{type:"application/json"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
     a.download=(S.name||"character").replace(/[^\w\- ]/g,"")+".json";
@@ -5537,6 +5854,11 @@ document.addEventListener("change",e=>{
   const t=e.target;
   if(t.dataset.assign){ S.assigned[t.dataset.assign]=t.value; render(); return; }
   if(t.dataset.body){ S.body[t.dataset.body]=t.value; render(); return; }
+  if(t.id==="charfile-input"){
+    const file=t.files&&t.files[0];
+    if(file) importCharacterFile(file);
+    return;
+  }
   if(t.id==="art-file"){
     const file=t.files&&t.files[0];
     if(!file) return;
@@ -5633,6 +5955,14 @@ document.addEventListener("change",e=>{
 document.addEventListener("input",e=>{
   const t=e.target;
   if(t.id==="char-name"){ S.name=t.value; save(); }
+  if(t.dataset&&t.dataset.manual){
+    // patch the box in place: a full render would yank focus out of the input
+    const a=t.dataset.manual;
+    S.manual[a]=t.value===""?"":t.value;
+    const box=document.querySelector('[data-manual-box="'+a+'"] .ab-mod');
+    if(box) box.innerHTML=manualModHTML(a);
+    renderNav(); save(); return;
+  }
   if(t.dataset&&("xp" in t.dataset)){
     S.xp=Math.max(0,+t.value||0);
     const L=levelForXP(S.xp);
@@ -5776,6 +6106,311 @@ const Dice={
   clearLog(){ $("dice-log").innerHTML=""; }
 };
 $("dice-toggle").addEventListener("click",()=>$("dice-tray").classList.toggle("open"));
+
+/* =====================================================================
+   LEVEL-UP WALKTHROUGH
+   Opens over the character sheet and takes the hero up one level: which
+   class gains it, hit points, then only the choices that level actually
+   brings (subclass, ability improvement or feat, multiclass skill, spells),
+   and a before/after review. The level is applied to S the moment a class is
+   picked, so every rules function already sees the new level; a snapshot
+   taken on opening puts the hero back exactly on Cancel. The pickers are the
+   Advancement step's own, writing through the same change handlers.
+===================================================================== */
+let LU=null;   // {snap, before, target, ix, steps, at, hp, subWas} while open
+
+const LU_STEP_LABELS={class:"Class",hp:"Hit Points",subclass:"Subclass",asi:"Improvement",mcskill:"Skill",spells:"Spells",review:"Review"};
+
+function luOpen(){
+  if(!S.klass || totalLevel()>=MAX_LEVEL) return;
+  LU={snap:JSON.stringify(S), before:luStats(),
+    // class levels and XP as they stood on opening, for the class step to offer from
+    base:{xp:S.xp, own:classEntries().map(en=>({ix:en.ix,name:en.name,level:en.level,subclass:en.subclass}))}, target:null, ix:null, steps:["class","review"], at:0, hp:null, subWas:null};
+  DRILL_STATE["lu-multiclass"]=false;
+  document.body.classList.add("lu-open");
+  $("lu-modal").classList.add("open");
+  luRender();
+  $("lu-box").focus();
+}
+function luClose(){
+  LU=null;
+  $("lu-modal").classList.remove("open");
+  document.body.classList.remove("lu-open");
+  render();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+function luRestore(){ replaceState(JSON.parse(LU.snap)); }
+function luCancel(){
+  if(LU.target && !confirm("Abandon this level-up? Your hero goes back exactly as they were.")) return;
+  luRestore(); luClose();
+}
+function luStats(){
+  return {TL:totalLevel(), hp:computeHP(), pb:profBonus(), scores:finalScores(),
+    slots:combinedSlotTable().slice(), pact:pactSlotsAll(),
+    line:classEntries().map(en=>en.name+" "+en.level).join(" / ")};
+}
+function luEntry(){ return (LU&&LU.ix!=null) ? classEntries().find(en=>en.ix===LU.ix)||null : null; }
+
+/* Names of what class `name` gains on reaching class level L */
+function luGains(name,L,subclass){
+  const c=CLASSES[name], p=c.progression||{}, out=[];
+  if(L===1) (c.features||[]).forEach(f=>out.push(f.n));
+  ((p.featuresByLevel||{})[L]||[]).forEach(f=>out.push(f.n));
+  const si=SUBCLASSES[name];
+  if(si){
+    const sub=subclass&&si.options[subclass];
+    if(sub && sub.features && sub.features[L]) sub.features[L].forEach(f=>out.push(f.n+" ("+subclass+")"));
+    else if(!sub && L>=si.level) out.push("Choose your "+si.label);
+  }
+  if((p.asiLevels||[]).includes(L)) out.push("Ability Score Improvement or a feat");
+  return out;
+}
+function luGainsList(items){
+  if(!items.length) return '<ul class="lu-gains"><li><i>No new class features — hit points and any spell growth</i></li></ul>';
+  const shown=items.slice(0,6);
+  return '<ul class="lu-gains">'+shown.map(n=>'<li>'+n+'</li>').join('')
+    +(items.length>6?'<li><i>…and '+(items.length-6)+' more</i></li>':'')+'</ul>';
+}
+
+/* Apply the chosen class level. Picking a different class undoes the last pick first. */
+function luChoose(target){
+  if(LU.target===target) return;
+  if(LU.target) luRestore();
+  LU.target=target; LU.hp=null;
+  if(target.indexOf("new:")===0){
+    S.multi.push({name:target.slice(4), level:1, subclass:null, skills:[], cantrips:[], spells:[], asiPicks:{}, hpRolls:[]});
+    LU.ix=S.multi.length;
+  } else {
+    LU.ix=+target.slice(3);
+    setClassField(LU.ix,{level:luEntry().level+1});
+  }
+  S.xp=Math.max(S.xp, xpForLevel(totalLevel()));
+  const en=luEntry();
+  LU.subWas=en.subclass;
+  // only the steps this particular level calls for
+  const steps=["class","hp"];
+  if(subclassInfoOf(en) && subclassUnlockedOf(en) && !en.subclass) steps.push("subclass");
+  if(asiLevelsOf(en).includes(en.level)) steps.push("asi");
+  if(en.ix>0 && en.level===1 && mcInfo(en.name).skillPick) steps.push("mcskill");
+  if(CLASSES[en.name].spellcasting && (cantripsKnownOf(en)>0 || Object.keys(spellsByLevel(en)).length)) steps.push("spells");
+  steps.push("review");
+  LU.steps=steps;
+  // open the drawer for the highest spell level the class can now learn
+  const maxL=maxSpellLevelOf(en);
+  if(maxL) DRILL_STATE["spells-"+en.ix+"-L"+maxL]=true;
+}
+
+function luTakeHP(how){
+  if(LU.hp) return;
+  const en=luEntry(), die=CLASSES[en.name].hitDie, avgOf=o=>Math.floor(CLASSES[o.name].hitDie/2)+1;
+  const val=how==="roll" ? 1+Math.floor(Math.random()*die) : avgOf(en);
+  const switched=how==="roll" && S.hpMode!=="rolled";
+  if(switched){
+    // rolling from here on: every earlier level keeps exactly the average it
+    // was already taking, so hit points already earned do not move
+    classEntries().forEach(o=>{
+      o.hpRolls.length=0;
+      for(let i=0;i<hpRollCount(o);i++) o.hpRolls.push(avgOf(o));
+    });
+    S.hpMode="rolled";
+  }
+  if(S.hpMode==="rolled"){
+    const n=hpRollCount(en);
+    while(en.hpRolls.length<n-1) en.hpRolls.push(avgOf(en));
+    en.hpRolls.length=n-1;
+    en.hpRolls.push(val);
+  }
+  LU.hp={how,val,switched};
+  if(how==="roll") Dice.log("Level "+totalLevel()+" hit die ("+en.name+" d"+die+"): <b>"+val+"</b>");
+  render();
+}
+
+function luStepDone(id){
+  const en=luEntry();
+  switch(id){
+    case "class":    return !!LU.target;
+    case "hp":       return !!LU.hp;
+    case "subclass": return !!(en&&en.subclass);
+    case "asi":      return !!(en&&asiPickComplete(en,en.level));
+    default:         return true;   // skill and spell picks can be finished later in Advancement
+  }
+}
+function luBlockedHint(id){
+  return {class:"Choose which class gains the level.",hp:"Take your hit points to continue.",
+    subclass:"Choose a subclass to continue.",asi:"Finish the improvement or feat choice to continue."}[id]||"";
+}
+/* Picks this level opened that are still empty — shown on review and after Finish */
+function luOutstanding(){
+  const en=luEntry(), out=[];
+  if(!en) return out;
+  const tag=isMulticlassed()?en.name+" ":"";
+  if(CLASSES[en.name].spellcasting){
+    const c=cantripsKnownOf(en)-en.cantrips.length, s=spellBudgetOf(en)-en.spells.length;
+    if(c>0) out.push(c+" "+tag+"cantrip pick"+(c===1?"":"s")+" still open — finish in Step IV.");
+    if(s>0 && Object.keys(spellsByLevel(en)).length) out.push(s+" "+tag+"spell pick"+(s===1?"":"s")+" still open — finish in Step IV.");
+  }
+  if(en.ix>0 && en.level===1){
+    const mc=mcInfo(en.name);
+    if(mc.skillPick && en.skills.length<mc.skillPick.count) out.push(en.name+" multiclass skill not yet chosen — finish in Step IV.");
+  }
+  return out;
+}
+function luFinish(){
+  const en=luEntry(), TL=totalLevel();
+  S.xp=Math.max(S.xp, xpForLevel(TL));
+  SHEET_NOTE={
+    html:'⬆ <b>'+(S.name||"Your hero")+'</b> is now <b>level '+TL+'</b> — '+en.name+' '+en.level+(en.subclass?' ('+en.subclass+')':'')
+      +'. Save a fresh character file to keep this level.',
+    warnings:luOutstanding(), offerLevel:true};
+  luClose();
+}
+function luGo(delta){
+  const id=LU.steps[LU.at];
+  if(delta>0 && !luStepDone(id)) return;
+  LU.at=Math.max(0,Math.min(LU.steps.length-1,LU.at+delta));
+  luRender();
+  $("lu-modal").scrollTop=0;
+}
+
+/* ---------- step bodies ---------- */
+function luClassStep(){
+  // offer levels as they stood when the walkthrough opened, not as last picked
+  const B=LU.before, own=LU.base.own;
+  const nextPB=2+Math.floor(B.TL/4);
+  const cards=own.map(o=>{
+    const t="ix:"+o.ix, nl=o.level+1;
+    return '<div class="choice-card'+(LU.target===t?' selected':'')+'" data-lu="pick" data-target="'+t+'">'
+      +'<h3>'+o.name+' '+o.level+' → '+nl+'</h3>'
+      +'<div class="tagline">'+(o.subclass||'Hit die d'+CLASSES[o.name].hitDie)+'</div>'
+      +'<div class="statline">At '+o.name+' level '+nl+' you gain:</div>'+luGainsList(luGains(o.name,nl,o.subclass))+'</div>';
+  }).join('');
+  const taken=new Set(own.map(o=>o.name));
+  const currentOK=own.every(o=>mcMeets(o.name,B.scores));
+  const mcCards=Object.keys(CLASSES).filter(k=>!taken.has(k)).map(k=>{
+    const ok=mcMeets(k,B.scores)&&currentOK, t="new:"+k;
+    return '<div class="choice-card'+(LU.target===t?' selected':'')+'"'+(ok?' data-lu="pick" data-target="'+t+'"':'')+' style="'+(ok?'':'opacity:.45;cursor:not-allowed')+'">'
+      +'<h3 style="font-size:1rem">'+k+' 1</h3><div class="tagline">'+CLASSES[k].tagline+'</div>'
+      +'<div class="statline">'+(ok?'Prerequisite: '+mcReqText(k)+' ✓':'🔒 '+(mcMeets(k,B.scores)?'Your current class prerequisites are unmet':'Requires '+mcReqText(k)))+'</div>'
+      +(ok?luGainsList(luGains(k,1,null)):'')+'</div>';
+  }).join('');
+  if(LU.target&&LU.target.indexOf("new:")===0) DRILL_STATE["lu-multiclass"]=true;
+  return '<h3 style="color:var(--gold);font-variant:small-caps">Which class gains level '+(B.TL+1)+'?</h3>'
+    +'<div class="rules-note">Most heroes keep climbing in the class they have. '
+    +(nextPB>B.pb?'Reaching character level '+(B.TL+1)+' also raises your <b>proficiency bonus to +'+nextPB+'</b>. ':'')
+    +'Experience needed for level '+(B.TL+1)+': <b>'+xpForLevel(B.TL+1).toLocaleString()+' XP</b> (you have '+LU.base.xp.toLocaleString()+').</div>'
+    +'<div class="card-grid">'+cards+'</div>'
+    +drill('➕ Or take up a new class — multiclassing',
+      '<div class="rules-note">A new class needs <b>13 or higher</b> in its key abilities, and in those of every class you already have. It grants only reduced proficiencies and no starting equipment.</div>'
+      +'<div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">'+mcCards+'</div>', false, "lu-multiclass");
+}
+function luHpStep(){
+  const en=luEntry(), die=CLASSES[en.name].hitDie, avg=Math.floor(die/2)+1;
+  const con=mod(finalScores().con), per=hpPerLevelBonus();
+  const extras=fmtMod(con)+' Constitution'+(per?' and '+fmtMod(per)+' from traits':'');
+  let body;
+  if(!LU.hp){
+    body='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">'
+      +'<button class="btn" data-lu="hp" data-how="avg">Take the average: '+avg+'</button>'
+      +'<button class="btn gold" data-lu="hp" data-how="roll">🎲 Roll 1d'+die+'</button></div>';
+  } else {
+    const gain=Math.max(1,LU.hp.val+con+per);
+    body='<div class="lu-hp-result">+'+gain+'</div>'
+      +'<div style="text-align:center;color:var(--ink-dim)">'+(LU.hp.how==="roll"?'Rolled <b style="color:var(--ink)">'+LU.hp.val+'</b> on the d'+die:'Took the average of <b style="color:var(--ink)">'+avg+'</b>')
+      +', '+extras+' — hit points now <b style="color:var(--gold-bright)">'+computeHP()+'</b></div>'
+      +(LU.hp.switched?'<div class="rules-note">From now on your sheet records each level’s hit die. Every earlier level keeps the average it was already taking, so no hit points were lost or gained retroactively.</div>':'');
+  }
+  return '<h3 style="color:var(--gold);font-variant:small-caps">Hit Points</h3>'
+    +'<div class="rules-note">Your new '+en.name+' level adds one <b>d'+die+'</b> hit die. Take the fixed average or trust the die — then add '+extras+'. A roll stands once made.</div>'
+    +body;
+}
+function luSpellStep(){
+  const en=luEntry(), prev=Object.assign({},en,{level:en.level-1});
+  const had=en.level>1;
+  const pc=had?cantripsKnownOf(prev):0, nc=cantripsKnownOf(en);
+  const pm=had?maxSpellLevelOf(prev):0, nm=maxSpellLevelOf(en);
+  const notes=[];
+  if(nc>pc) notes.push('you learn <b>'+(nc-pc)+'</b> new cantrip'+(nc-pc===1?'':'s'));
+  if(nm>pm) notes.push('spells of <b>level '+nm+'</b> are now within reach');
+  const open=spellBudgetOf(en)-en.spells.length;
+  if(open>0) notes.push('<b>'+open+'</b> spell pick'+(open===1?' is':'s are')+' open');
+  return '<div class="rules-note">'+(notes.length?'At this level '+notes.join(', ')+'. ':'')
+    +'Fill your new picks below. The rules also let most casters swap one spell they know for another of a level they can cast when they level up — uncheck one to make room.</div>'
+    +spellPickerUI(en);
+}
+function luReviewStep(){
+  const en=luEntry(), B=LU.before, f=finalScores(), hp=computeHP(), pb=profBonus();
+  const tile=(label,val)=>'<div><div class="ld-label">'+label+'</div><div class="ld-val">'+val+'</div></div>';
+  const tiles=[
+    tile("Character level",B.TL+' → <b>'+totalLevel()+'</b>'),
+    tile("Classes",'<b>'+classEntries().map(o=>o.name+" "+o.level).join(" / ")+'</b>'),
+    tile("Hit points",(B.hp||0)+' → <b>'+hp+'</b>'+(hp-(B.hp||0)?' ('+fmtMod(hp-(B.hp||0))+')':''))
+  ];
+  if(pb!==B.pb) tiles.push(tile("Proficiency bonus",'+'+B.pb+' → <b>+'+pb+'</b>'));
+  const slotStr=(t,p)=>[t.length?t.map((n,i)=>"L"+(i+1)+"×"+n).join(" "):"",p?p[0]+"× L"+p[1]+" pact":""].filter(Boolean).join(" · ")||"none";
+  const before=slotStr(B.slots,B.pact), after=slotStr(combinedSlotTable(),pactSlotsAll());
+  if(before!==after) tiles.push(tile("Spell slots",before+' → <b>'+after+'</b>'));
+  ABILITIES.forEach(a=>{ if(f[a]!==B.scores[a]) tiles.push(tile(ABILITY_INFO[a].name,B.scores[a]+' → <b>'+f[a]+'</b>')); });
+  const newSub=LU.subWas!==en.subclass;
+  const gained=allFeatures().filter(ft=>ft.ix===en.ix && (ft.lvl===en.level || (newSub && ft.src===en.subclass && ft.lvl<=en.level)));
+  const pick=en.asiPicks[en.level];
+  if(pick&&pick.mode==="feat"&&pick.feat&&FEATS[pick.feat]) gained.push({n:"Feat: "+pick.feat,d:FEATS[pick.feat].d});
+  const todo=luOutstanding();
+  return '<h3 style="color:var(--gold);font-variant:small-caps">Before &amp; after</h3>'
+    +'<div class="lu-diff">'+tiles.join('')+'</div>'
+    +'<h3 style="color:var(--gold);font-variant:small-caps;margin-top:14px">Gained at '+en.name+' level '+en.level+'</h3>'
+    +(gained.length?traitList(gained):'<div class="rules-note">No new named features this level — the gain is in hit points'+(CLASSES[en.name].spellcasting?' and spellcasting':'')+'.</div>')
+    +(todo.length?'<div class="incomplete-warn" style="margin-top:12px"><b>Still open:</b><ul>'+todo.map(t=>'<li>'+t+'</li>').join('')+'</ul></div>':'');
+}
+
+function luRender(){
+  if(!LU) return;
+  const modal=$("lu-modal"), keep=modal.scrollTop;
+  const id=LU.steps[LU.at], en=luEntry();
+  let body;
+  switch(id){
+    case "class":    body=luClassStep(); break;
+    case "hp":       body=luHpStep(); break;
+    case "subclass": body='<div class="rules-note">'+en.name+' level '+en.level+' is where your path narrows. Choose your '+subclassInfoOf(en).label+'; its features will be on your sheet from here on.</div>'+subclassUI(en); break;
+    case "asi":      body='<h3 style="color:var(--gold);font-variant:small-caps">Ability Score Improvement or Feat</h3>'
+                       +'<div class="rules-note">Raise one ability by 2, two abilities by 1 each, or take a feat instead. No ability may go above 20.</div>'+asiRowUI(en,en.level); break;
+    case "mcskill":  body='<h3 style="color:var(--gold);font-variant:small-caps">Multiclass Skill</h3>'+mcSkillPickerUI(en); break;
+    case "spells":   body=luSpellStep(); break;
+    default:         body=luReviewStep();
+  }
+  const pills=LU.steps.map((s,i)=>{
+    const label=s==="subclass"&&en&&subclassInfoOf(en)?subclassInfoOf(en).label:LU_STEP_LABELS[s];
+    return '<span class="'+(i===LU.at?'active':(i<LU.at?'done':''))+'">'+(i<LU.at?'✓ ':'')+label+'</span>';
+  }).join('');
+  const done=luStepDone(id), last=LU.at===LU.steps.length-1;
+  const title=LU.target?'Level '+totalLevel()+' — '+en.name+' '+en.level:'Level '+(LU.before.TL+1);
+  $("lu-box").innerHTML='<div class="panel">'
+    +'<h2><span class="ornament">⬆</span> Level Up · '+title+'</h2>'
+    +'<p class="lede">'+(S.name||"Your hero")+' grows stronger. Each step below covers one thing this level brings.</p>'
+    +'<div class="lu-progress">'+pills+'</div>'
+    +body
+    +'<div class="step-footer">'
+    +'<button class="btn" data-lu="cancel">✖ Cancel</button>'
+    +'<span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
+    +(done?'':'<span style="color:var(--ink-dim);font-size:.88rem;font-style:italic">'+luBlockedHint(id)+'</span>')
+    +(LU.at>0?'<button class="btn" data-lu="back">◂ Back</button>':'')
+    +(last?'<button class="btn gold" data-lu="finish">✦ Finish level-up</button>'
+          :'<button class="btn gold" data-lu="next"'+(done?'':' disabled')+'>Next ▸</button>')
+    +'</span></div></div>';
+  modal.scrollTop=keep;
+}
+
+$("lu-modal").addEventListener("click",e=>{
+  const t=e.target.closest("[data-lu]");
+  if(!t||!LU) return;
+  const a=t.dataset.lu;
+  if(a==="pick"){ luChoose(t.dataset.target); render(); return; }
+  if(a==="hp"){ luTakeHP(t.dataset.how); return; }
+  if(a==="next") luGo(1);
+  else if(a==="back") luGo(-1);
+  else if(a==="cancel") luCancel();
+  else if(a==="finish") luFinish();
+});
+document.addEventListener("keydown",e=>{ if(LU && e.key==="Escape") luCancel(); });
 
 /* ---------- boot ---------- */
 load();

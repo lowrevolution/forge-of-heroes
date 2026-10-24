@@ -173,6 +173,48 @@
 </section>
 
 <section class="week">
+  <h2>Week 4 &middot; Oct 19 &ndash; 25, 2026</h2>
+  <p class="week-sum">A lore bard turned up whose doubled skills the forge could not express: Expertise was written on the sheet as a feature but never computed. It computes now, and with it a subclass can hand out skill proficiencies of its own. Three gaps in the tables closed in the same pass &mdash; the wizard's Divination school, the Entertainer background, and two spells that were being asked for and were not there. A printing bug went with them: headless printing came out blank.</p>
+
+  <div class="day">
+    <h3>Saturday, October 24</h3>
+
+    <div class="entry">
+      <span class="hash">9a04200</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>Expertise, and subclass skill proficiencies</strong>
+        <p>Expertise was described on the sheet and nowhere else, so a lore bard's
+        doubled skills printed at a plain proficiency bonus. The chosen skills now
+        live on the hero, with two picks at rogue 1 and bard 3 and two more at
+        rogue 6 and bard 10, a picker on the Advancement step that offers only
+        skills you are already proficient in, and a doubled bonus marked with a
+        star on the sheet. Drop a proficiency and its expertise goes quietly with
+        it. A subclass can also grant skill proficiencies now; the lore bard's
+        three are the first, folded into the same allowance as the half-elf's.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">9a04200</span><span class="tag feature">FEATURE</span>
+      <span class="what"><strong>The Divination school, Entertainer, and two spells</strong>
+        <p>The wizard's fourth tradition arrives with Divination Savant, Portent,
+        Expert Divination, The Third Eye and Greater Portent. Entertainer joins the
+        backgrounds. <em>Find Familiar</em> and <em>See Invisibility</em> join the
+        spell table with their casting lines and go onto the class lists that
+        should have had them.</p></span>
+    </div>
+
+    <div class="entry">
+      <span class="hash">9a04200</span><span class="tag fix">FIX</span>
+      <span class="what"><strong>Headless printing came out blank</strong>
+        <p>Every step section fades in, and the animation starts at opacity zero.
+        A browser's own print dialog runs long after it has finished, so printing
+        by hand always looked right; a headless print renders the first frame and
+        laid out two correct, entirely empty pages. The print stylesheet now
+        cancels the animation.</p></span>
+    </div>
+  </div>
+</section>
+
+<section class="week">
   <h2>Week 3 &middot; Oct 12 &ndash; 18, 2026</h2>
   <p class="week-sum">Heroes leave the forge and come back. A character file saves the whole hero and loads them again on any device, a short hand-written one brings a paper character in, and scores can be typed rather than rolled. Then the hero you loaded can grow: a Level Up button on the sheet walks through every choice the next level brings, one step at a time, and Cancel leaves no trace. By Friday the forge speaks a second game: pick 13th Age 2nd Edition on the new first step and every screen after it — kin, talents, spells cast at your level, feats by tier, One Unique Thing, backgrounds, icons, the sheet and the level-up — is built for that system.</p>
 
@@ -464,17 +506,19 @@
 <script>
 // STATS:BEGIN -- rewritten in place by update_stats.ps1; do not edit by hand
 window.DEVLOG_STATS = {
-  "generated": "Jul 31, 2026",
-  "commits": 15,
-  "devDays": 2,
-  "appLoc": 5658,
+  "generated": "Oct 24, 2026",
+  "commits": 21,
+  "devDays": 5,
+  "appLoc": 8949,
   "classes": 22,
   "races": 19,
-  "spells": 139,
+  "spells": 141,
   "feats": 35,
   "commitsByWeek": [
   { "label": "Wk Jul 20", "commits": 8 },
-  { "label": "Wk Jul 27", "commits": 7 }
+  { "label": "Wk Jul 27", "commits": 8 },
+  { "label": "Wk Oct 12", "commits": 4 },
+  { "label": "Wk Oct 19", "commits": 1 }
   ]
 };
 // STATS:END

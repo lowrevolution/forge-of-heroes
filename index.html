@@ -428,6 +428,10 @@
     #app{max-width:none;margin:0;padding:0}
     #app>*:not(#step-summary){display:none!important}
     #step-summary{display:block!important}
+    /* The fade-in starts at opacity 0. A browser's own print dialog runs long
+       after it has finished, but a headless print renders the first frame and
+       the whole sheet comes out blank, so the animation has no place here. */
+    section.step{animation:none!important;opacity:1!important;transform:none!important}
     #dice-toggle,#dice-tray,#lu-modal,.step-footer,nav.steps,.no-print{display:none!important}
 
     .sheet{box-shadow:none;border:none;background:#fff;color:#000;padding:0;border-radius:0}
@@ -737,6 +741,13 @@ const BACKGROUNDS = {
     skills:["Athletics","Intimidation"], tools:["One type of gaming set","Vehicles (land)"], languages:0,
     equipment:["Insignia of rank","Trophy taken from a fallen enemy","Set of bone dice or deck of cards","Common clothes","Belt pouch with 10 gp"],
     feature:{n:"Military Rank",d:"You have a military rank from your career as a soldier. Soldiers loyal to your former organization still recognize your authority and influence, and defer to you if they are of lower rank."}
+  },
+  "Entertainer":{
+    tagline:"A life lived on the stage and the road",
+    flavor:"You thrive in front of an audience. You know how to entrance them, entertain them, and even inspire them — your music, dance, acting or storytelling is your life's blood.",
+    skills:["Acrobatics","Performance"], tools:["Disguise kit","One type of musical instrument"], languages:0,
+    equipment:["Musical instrument","Favor of an admirer","Costume","Belt pouch with 15 gp"],
+    feature:{n:"By Popular Demand",d:"You can always find a place to perform — an inn, a tavern, a circus, a theater, or a noble's court. There you receive free lodging and food of a modest standard for as long as you perform each night, and your performances make you something of a local figure."}
   }
 };
 </script>
@@ -1063,6 +1074,7 @@ const SPELLS = {
   "Sleep":{lvl:1,school:"Enchantment",d:"Roll 5d8: that many hit points of creatures in a 20-ft. radius fall unconscious, lowest current hit points first. 1 minute."},
   "Speak with Animals":{lvl:1,school:"Divination",d:"For 10 minutes, comprehend and verbally communicate with beasts. Ritual."},
   "Thunderwave":{lvl:1,school:"Evocation",d:"A wave of thunderous force (15-ft. cube from you). Con save: 2d8 thunder damage and pushed 10 ft. (half damage, no push on success). Audible 300 ft. away."},
+  "Find Familiar":{lvl:1,school:"Conjuration",d:"Gain a spirit familiar in animal form (celestial, fey or fiend) that acts on its own, shares its senses with you when you choose, and can deliver your touch spells. Ritual."},
   "Unseen Servant":{lvl:1,school:"Conjuration",d:"An invisible, shapeless force (Str 2) performs simple tasks for 1 hour. Ritual."}
 };
 
@@ -1089,7 +1101,7 @@ const CLASS_SPELLS = {
   },
   Wizard:{
     cantrips:["Acid Splash","Chill Touch","Dancing Lights","Fire Bolt","Light","Mage Hand","Mending","Message","Minor Illusion","Poison Spray","Prestidigitation","Ray of Frost","Shocking Grasp","True Strike"],
-    level1:["Burning Hands","Charm Person","Comprehend Languages","Detect Magic","Disguise Self","Expeditious Retreat","False Life","Feather Fall","Fog Cloud","Identify","Jump","Longstrider","Mage Armor","Magic Missile","Protection from Evil and Good","Shield","Silent Image","Sleep","Thunderwave","Unseen Servant"]
+    level1:["Burning Hands","Charm Person","Comprehend Languages","Detect Magic","Disguise Self","Expeditious Retreat","False Life","Feather Fall","Fog Cloud","Identify","Jump","Longstrider","Mage Armor","Magic Missile","Protection from Evil and Good","Shield","Silent Image","Sleep","Thunderwave","Unseen Servant","Find Familiar"]
   }
 };
 /* Hellish Rebuke and Burning Hands are Fiend-patron expanded spells for warlocks;
@@ -1295,6 +1307,7 @@ function attackLine(name){
 
 /* [casting time, range, components, duration] for every spell */
 const SPELL_META = {
+  "Find Familiar":["1 hour","10 ft.","V, S, M (10 gp of charcoal, incense and herbs)","Instantaneous"],
   "Acid Splash":["1 action","60 ft.","V, S","Instantaneous"],
   "Chill Touch":["1 action","120 ft.","V, S","1 round"],
   "Dancing Lights":["1 action","120 ft.","V, S, M","Concentration, 1 min."],
@@ -2545,6 +2558,19 @@ const SUBCLASSES_SRD = {
           10: [{ n: "Inured to Undeath", d: "Immune to any effect that would reduce your hit point maximum. You also have resistance to necrotic damage." }],
           14: [{ n: "Command Undead", d: "As an action, target one undead creature within 60 feet that is not under another creature's control; it must succeed on a Charisma saving throw (DC 8 + proficiency bonus + Intelligence modifier), automatically failing if it lacks an Intelligence score of 8 or higher, or be charmed by you and obey your commands." }]
         }
+      },
+      "School of Divination": {
+        tagline: "Glimpse what is coming and bend the odds to meet it",
+        flavor: "Diviners sharpen the sight that pierces veils of time and distance, pulling fragments of the future loose and setting them where they will do the most good.",
+        features: {
+          2: [
+            { n: "Divination Savant", d: "The gold and time cost to copy a divination spell into your spellbook is halved." },
+            { n: "Portent", d: "After each long rest, roll two d20s and record the numbers. You can replace any attack roll, saving throw, or ability check made by you or a creature you can see with one of these rolls, choosing to do so before the roll is made. Each foretelling roll can be used only once, and unused rolls are lost when you finish your next long rest." }
+          ],
+          6: [{ n: "Expert Divination", d: "When you cast a divination spell of 2nd level or higher using a spell slot, you regain one expended spell slot of a level lower than the spell you cast (and no higher than 5th level)." }],
+          10: [{ n: "The Third Eye", d: "After a rest, use an action to gain one benefit until your next rest: darkvision out to 60 feet, see invisibility out to 10 feet, read any written language, or see into the Ethereal Plane out to 60 feet." }],
+          14: [{ n: "Greater Portent", d: "You roll three d20s for your Portent feature rather than two." }]
+        }
       }
     }
   }
@@ -2557,6 +2583,7 @@ const SPELLS_HI = {
   "Misty Step":{lvl:2,school:"Conjuration",d:"You teleport up to 30 feet to an unoccupied space you can see, as a bonus action, with no risk of attacks of opportunity."},
   "Scorching Ray":{lvl:2,school:"Evocation",d:"You create three rays of fire and hurl them at targets within 120 feet, each requiring a ranged spell attack for 2d6 fire damage; higher-level slots add one extra ray each."},
   "Invisibility":{lvl:2,school:"Illusion",d:"A willing creature you touch becomes invisible for up to 1 hour (concentration), the effect ending early if the target attacks or casts a spell."},
+  "See Invisibility":{lvl:2,school:"Divination",d:"For 1 hour you see invisible creatures and objects as if they were visible, and you can see into the Ethereal Plane, where ethereal creatures and objects appear ghostly and translucent."},
   "Hold Person":{lvl:2,school:"Enchantment",d:"A humanoid within 60 feet must succeed on a Wisdom saving throw or be paralyzed for the concentration duration of up to 1 minute, repeating the save each turn."},
   "Suggestion":{lvl:2,school:"Enchantment",d:"You magically suggest a reasonable course of action to one creature within 30 feet that can hear you; it must succeed on a Wisdom save or pursue that course for up to 8 hours (concentration)."},
   "Web":{lvl:2,school:"Conjuration",d:"Thick webbing fills a 20-foot cube within 60 feet, heavily obscuring the area and restraining creatures that fail a Dexterity save, lasting up to 1 hour (concentration)."},
@@ -2640,6 +2667,7 @@ const SPELL_META_HI = {
   "Misty Step":["1 bonus action","Self","V","Instantaneous"],
   "Scorching Ray":["1 action","120 feet","V, S","Instantaneous"],
   "Invisibility":["1 action","Touch","V, S, M","Concentration, up to 1 hour"],
+  "See Invisibility":["1 action","Self","V, S, M","1 hour"],
   "Hold Person":["1 action","60 feet","V, S, M","Concentration, up to 1 minute"],
   "Suggestion":["1 action","30 feet","V, M","Concentration, up to 8 hours"],
   "Web":["1 action","60 feet","V, S, M","Concentration, up to 1 hour"],
@@ -2721,7 +2749,7 @@ const SPELL_META_HI = {
 
 const CLASS_SPELLS_HI = {
   Bard:{
-    2:["Invisibility","Hold Person","Suggestion","Mirror Image"],
+    2:["Invisibility","Hold Person","Suggestion","Mirror Image","See Invisibility"],
     3:["Dispel Magic","Haste","Hypnotic Pattern","Major Image"],
     4:["Dimension Door","Greater Invisibility","Confusion","Polymorph"],
     5:["Teleportation Circle","Legend Lore","Scrying","Dominate Person"],
@@ -2751,7 +2779,7 @@ const CLASS_SPELLS_HI = {
     9:["Shapechange","Foresight","Mass Heal"]
   },
   Sorcerer:{
-    2:["Misty Step","Scorching Ray","Invisibility","Mirror Image","Suggestion"],
+    2:["Misty Step","Scorching Ray","Invisibility","Mirror Image","Suggestion","See Invisibility"],
     3:["Fireball","Lightning Bolt","Haste","Fly"],
     4:["Polymorph","Dimension Door","Ice Storm","Greater Invisibility"],
     5:["Cone of Cold","Wall of Force","Hold Monster","Dominate Person"],
@@ -2767,7 +2795,7 @@ const CLASS_SPELLS_HI = {
     5:["Hold Monster","Dominate Person","Scrying"]
   },
   Wizard:{
-    2:["Misty Step","Scorching Ray","Invisibility","Mirror Image","Web"],
+    2:["Misty Step","Scorching Ray","Invisibility","Mirror Image","Web","See Invisibility"],
     3:["Fireball","Counterspell","Lightning Bolt","Dispel Magic","Major Image","Fly","Haste"],
     4:["Polymorph","Dimension Door","Wall of Fire","Banishment","Ice Storm","Stoneskin","Divination"],
     5:["Cone of Cold","Wall of Force","Teleportation Circle","Legend Lore","Scrying"],
@@ -2777,7 +2805,7 @@ const CLASS_SPELLS_HI = {
     9:["Wish","Meteor Swarm","Time Stop","Gate","Shapechange"]
   },
   Artificer:{
-    2:["Misty Step","Aid","Lesser Restoration","Invisibility"],
+    2:["Misty Step","Aid","Lesser Restoration","Invisibility","See Invisibility"],
     3:["Haste","Dispel Magic","Revivify"],
     4:["Stoneskin","Freedom of Movement","Divination"],
     5:["Wall of Force","Legend Lore","Raise Dead"]
@@ -7252,7 +7280,7 @@ function freshState(){ return {
   art:null,
   halfElf:["",""],
   race:null, raceChoices:{},
-  klass:null, classChoices:{}, skills:[], cantrips:[], spells1:[],
+  klass:null, classChoices:{}, skills:[], cantrips:[], spells1:[], expertise:[],
   level:1, xp:0, subclass:null, asiPicks:{}, hpMode:"average", hpRolls:[],
   // additional classes beyond the first; the starting class keeps the fields above
   multi:[],   // [{name, level, subclass, skills:[], cantrips:[], spells:[], asiPicks:{}, hpRolls:[]}]
@@ -7354,9 +7382,33 @@ function grantedSkills(){
   classEntries().forEach(en=>{ if(en.ix>0) en.skills.forEach(s=>g.add(s)); });
   return g;
 }
+/* Skill proficiencies a subclass hands out on top of the class list — the
+   lore bard's three, and nothing else so far. */
+function bonusSkillPicks(){
+  let n=0;
+  classEntries().forEach(en=>{ if(en.subclass==="College of Lore" && en.level>=3) n+=3; });
+  return n;
+}
 function skillBudget(){
   if(!S.klass) return {classCount:0, anyCount:0};
-  return {classCount:CLASSES[S.klass].skills.count, anyCount:(S.race==="Half-Elf"?2:0)};
+  return {classCount:CLASSES[S.klass].skills.count,
+          anyCount:(S.race==="Half-Elf"?2:0)+bonusSkillPicks()};
+}
+/* Expertise doubles the proficiency bonus on a chosen skill. Rogues take two
+   at 1st and two more at 6th; bards two at 3rd and two more at 10th. */
+function expertiseBudget(){
+  let n=0;
+  classEntries().forEach(en=>{
+    if(en.name==="Rogue"){ if(en.level>=1) n+=2; if(en.level>=6) n+=2; }
+    if(en.name==="Bard"){ if(en.level>=3) n+=2; if(en.level>=10) n+=2; }
+  });
+  return n;
+}
+/* Only skills you are actually proficient in can carry expertise, and only up
+   to the budget — so dropping a proficiency quietly drops its expertise too. */
+function expertiseSkills(){
+  const prof=new Set([...S.skills,...grantedSkills()]);
+  return new Set((S.expertise||[]).filter(s=>prof.has(s)).slice(0,expertiseBudget()));
 }
 
 function computeAC(){
@@ -7612,7 +7664,30 @@ function skillPickerUI(){
   return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Skill Proficiencies</h3>'
     +'<div class="pick-counter">Choose <b>'+budget.classCount+'</b> class skills'+(budget.anyCount?' + <b>'+budget.anyCount+'</b> any skills (Half-Elf Skill Versatility)':'')
     +' — picked <b>'+fromClass+'</b>/'+budget.classCount+(budget.anyCount?' and <b>'+fromAny+'</b>/'+budget.anyCount:'')+'. Skills granted by race or background are locked in.</div>'
-    +'<div class="pick-list">'+skillItems+'</div>';
+    +'<div class="pick-list">'+skillItems+'</div>'
+    +expertisePickerUI();
+}
+
+/* The expertise picker only appears for a class that has any, and only offers
+   skills already proficient — expertise on a skill you lack means nothing. */
+function expertisePickerUI(){
+  const budget=expertiseBudget();
+  if(!budget) return "";
+  const prof=[...new Set([...S.skills,...grantedSkills()])].sort();
+  const chosen=expertiseSkills();
+  const full=chosen.size>=budget;
+  const items=prof.map(sk=>{
+    const picked=chosen.has(sk);
+    return '<label class="pick-item'+(picked?' picked':'')+((!picked&&full)?' locked':'')+'">'
+      +'<input type="checkbox" data-expertise="'+sk+'"'+(picked?' checked':'')+((!picked&&full)?' disabled':'')+'>'
+      +'<span><span class="pi-name">'+sk+'</span><span class="pi-sub">'+ABILITY_INFO[SKILLS[sk]].name
+      +(picked?' · double proficiency':(full?' · no picks left':''))+'</span></span></label>';
+  }).join('');
+  return '<h3 style="color:var(--gold);font-variant:small-caps;margin-top:18px">Expertise</h3>'
+    +'<div class="pick-counter">Choose <b>'+budget+'</b> proficient skill'+(budget===1?'':'s')
+    +' to double your proficiency bonus on — picked <b>'+chosen.size+'</b>/'+budget+'.'
+    +(prof.length?'':' Pick your skill proficiencies first.')+'</div>'
+    +'<div class="pick-list">'+items+'</div>';
 }
 
 function spellPickerUI(en){
@@ -7908,10 +7983,12 @@ function renderSummary(){
     const acInfo=computeAC(), hp=computeHP(), pb=profBonus();
     const granted=grantedSkills();
     const profSkills=new Set([...S.skills, ...granted]);
+    const expert=expertiseSkills();
     const skillLines=Object.keys(SKILLS).sort().map(sk=>{
-      const ab=SKILLS[sk], isProf=profSkills.has(sk);
-      const bonus=mod(f[ab])+(isProf?pb:0);
-      return '<div class="skill-line'+(isProf?' prof':'')+'"><span>'+sk+' <small>('+ab.toUpperCase()+')</small></span><span>'+fmtMod(bonus)+'</span></div>';
+      const ab=SKILLS[sk], isProf=profSkills.has(sk), isExpert=expert.has(sk);
+      const bonus=mod(f[ab])+(isProf?(isExpert?pb*2:pb):0);
+      return '<div class="skill-line'+(isProf?' prof':'')+'"><span>'+sk+' <small>('+ab.toUpperCase()+')</small>'
+        +(isExpert?' <small>&#9733; expertise</small>':'')+'</span><span>'+fmtMod(bonus)+'</span></div>';
     }).join('');
     const saveLines=ABILITIES.map(a=>{
       const isProf=c.saves.includes(a);
@@ -8093,7 +8170,7 @@ function migrateState(d){
   d.hpRolls=arr(d.hpRolls).map(v=>int(v,1,12,1));
   if(d.hpMode!=="rolled") d.hpMode="average";
   d.items=arr(d.items); d.equip=obj(d.equip); d.equipPicks=obj(d.equipPicks);
-  d.skills=arr(d.skills); d.cantrips=arr(d.cantrips); d.spells1=arr(d.spells1);
+  d.skills=arr(d.skills); d.cantrips=arr(d.cantrips); d.spells1=arr(d.spells1); d.expertise=arr(d.expertise);
   d.raceChoices=obj(d.raceChoices); d.classChoices=obj(d.classChoices);
   d.halfElf=arr(d.halfElf).concat(["",""]).slice(0,2);
   if(d.subclass===undefined) d.subclass=null;
@@ -8251,6 +8328,7 @@ function parseCharacterFile(raw){
   let dropped=0;
   const keep=(list,ok)=>list.filter(x=>{ const y=typeof x==="string"&&ok(x); if(!y) dropped++; return y; });
   out.skills=keep(out.skills,s=>s in SKILLS);
+  out.expertise=keep(out.expertise,s=>s in SKILLS);
   out.cantrips=keep(out.cantrips,s=>s in SPELLS);
   out.spells1=keep(out.spells1,s=>s in SPELLS);
   out.items=keep(out.items,s=>s in MAGIC_ITEMS);
@@ -8506,6 +8584,12 @@ document.addEventListener("change",e=>{
   if(t.dataset.equipPick!==undefined){
     if(t.value) S.equipPicks[t.dataset.equipPick]=t.value;
     else delete S.equipPicks[t.dataset.equipPick];
+    render(); return;
+  }
+  if(t.dataset.expertise){
+    const sk=t.dataset.expertise;
+    if(t.checked){ if(expertiseSkills().size<expertiseBudget() && !S.expertise.includes(sk)) S.expertise.push(sk); }
+    else S.expertise=S.expertise.filter(s=>s!==sk);
     render(); return;
   }
   if(t.dataset.skill){

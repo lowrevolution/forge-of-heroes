@@ -16,11 +16,11 @@ Supports characters from **level 1 to 20**, with experience thresholds, hit poin
 |---|---|
 | Races | 19 (9 core + 10 expansion) |
 | Classes | 22 (12 core + 10 expansion) |
-| Subclasses | 3 per class |
-| Spells | 139, cantrips through 9th level |
+| Subclasses | 3 per class (4 for the wizard) |
+| Spells | 141, cantrips through 9th level |
 | Feats | 35 |
 | Magic items | 40 |
-| Backgrounds | 6 |
+| Backgrounds | 7 |
 
 ### The workflow
 
@@ -29,7 +29,7 @@ After choosing the system, eight steps, each with expanding drill-down detail fo
 1. **Abilities** — roll 4d6-drop-lowest and drag each die onto the ability you want it in (drop onto an occupied slot to swap), or switch to manual entry and type the scores in (point buy, standard array, table rolls, or a hero copied from paper)
 2. **Race** — full trait text, racial ability bonuses, and sub-choices like draconic ancestry or celestial revelation
 3. **Class** — features, proficiencies, skill picker enforcing class lists, and a level-aware spell picker covering every spell level you can cast
-4. **Advancement** — level and XP (each drives the other), hit points by fixed average or rolled hit dice, subclass selection gated at the correct level, spell slots, and an ability-improvement-or-feat choice at every ASI level
+4. **Advancement** — level and XP (each drives the other), hit points by fixed average or rolled hit dice, subclass selection gated at the correct level, spell slots, skill proficiencies (including a subclass's bonus picks), expertise for the classes that get it, and an ability-improvement-or-feat choice at every ASI level
 5. **Background** — skills, tools, equipment, and roleplay features
 6. **Equipment** — class gear choices, armor and shield with live AC, plus a magic item hoard with attunement tracking
 7. **Details** — name, alignment, race-tuned physical description dropdowns with free-text options, personality, and a character art upload
@@ -114,6 +114,7 @@ Everything is computed rather than hardcoded. In fifth edition:
 - **Attacks** derive to-hit and damage from ability modifiers, proficiency, and fighting styles
 - **Armor Class** handles armor, shields, unarmored defense variants, touch AC, and flat-footed AC
 - **Ability scores** cap at 20 and combine rolls, racial bonuses, ASIs, and feat bonuses
+- **Expertise** doubles the proficiency bonus on chosen skills, two at rogue 1 and bard 3 and two more at rogue 6 and bard 10, offered only for skills already proficient
 
 In 13th Age:
 
